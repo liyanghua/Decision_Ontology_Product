@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { 
   AlertCircle, 
@@ -13,14 +14,45 @@ import {
   Users,
   Activity
 } from 'lucide-react';
-import { products, actions, todaySignals, highValueLeads, goalSummary } from '../data/mockData';
+import { products, actions, todaySignals, highValueLeads, goalSummary, todayFocusProducts } from '../data/liveCatalog';
+import { resolveKnowledgeSupport, type TodaySignalType } from '../data/expertKnowledge';
+import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDrawer';
+import { StrategySupportTrigger } from '../components/knowledge/StrategySupportTrigger';
 
 export function TodayCommand() {
-  const highRiskProducts = products.filter(p => p.riskLevel === 'high');
-  const pendingActions = actions.filter(a => a.status === 'pending');
+  const [strategySupportOpen, setStrategySupportOpen] = useState(false);
+  const highRiskProducts = [...products]
+    .filter((p) => p.riskLevel === 'high')
+    .sort((a, b) => b.priority - a.priority);
+  const pendingActions = actions.filter((a) => a.status === 'pending');
+  const pendingProductCount = new Set(pendingActions.map((a) => a.productId)).size;
   const criticalSignals = todaySignals.filter(s => s.severity === 'critical');
   const opportunities = highValueLeads.filter(l => l.type === 'opportunity');
   const risks = highValueLeads.filter(l => l.type === 'risk');
+
+  const todayCategoryRaw = todayFocusProducts[0]?.category?.trim() || 'default';
+  const todayCategoryKey =
+    todayCategoryRaw === '' || todayCategoryRaw === '—' ? 'default' : todayCategoryRaw;
+  const firstOppGoodsId = opportunities[0]?.productIds?.[0];
+
+  const todaySignalType = useMemo((): TodaySignalType => {
+    if (criticalSignals.length) return 'critical';
+    if (opportunities.length) return 'opportunity';
+    if (risks.length) return 'risk';
+    return 'neutral';
+  }, [criticalSignals.length, opportunities.length, risks.length]);
+
+  const todayResolved = useMemo(
+    () =>
+      resolveKnowledgeSupport({
+        page: 'today_command',
+        category: todayCategoryKey,
+        goodsId: firstOppGoodsId,
+        signalType: todaySignalType,
+        themeKey: opportunities[0]?.id,
+      }),
+    [todayCategoryKey, firstOppGoodsId, todaySignalType, opportunities],
+  );
 
   return (
     <div className="p-8 max-w-[1600px] mx-auto">
@@ -83,6 +115,61 @@ export function TodayCommand() {
               </Link>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50/60 px-4 py-3">
+        <p className="text-sm text-violet-950">
+          <span className="font-medium">策略与机会支持</span>
+          <span className="text-violet-800/90"> · 今日品类与机会商品语境</span>
+        </p>
+        <StrategySupportTrigger
+          compact
+          onClick={() => setStrategySupportOpen(true)}
+        />
+      </div>
+
+      {/* 今日重点商品（真实优先级队列 Top N） */}
+      <div className="mb-6 bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-indigo-50 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-semibold text-indigo-900">今日重点商品</h2>
+            <p className="text-sm text-indigo-800/90 mt-0.5">
+              综合评分排序 · 展示 Top {todayFocusProducts.length} · 待处理涉及 {pendingProductCount} 个商品
+            </p>
+          </div>
+          <Link
+            to="/products"
+            className="text-sm font-medium text-indigo-700 hover:text-indigo-900 flex items-center gap-1"
+          >
+            操盘台
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        </div>
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          {todayFocusProducts.map((p) => (
+            <Link
+              key={p.id}
+              to={`/products/${p.id}`}
+              className="block rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:bg-blue-50/40 transition-colors"
+            >
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <span className="text-xs font-mono text-gray-500 truncate">{p.id}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {p.priorityLevel && (
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 font-semibold">
+                      {p.priorityLevel}
+                    </span>
+                  )}
+                  <span className="text-sm font-semibold text-gray-900">{p.priority}</span>
+                </div>
+              </div>
+              <div className="text-sm font-medium text-gray-900 line-clamp-1 mb-1">{p.name}</div>
+              <p className="text-xs text-gray-600 line-clamp-2">
+                {p.diagnosisBrief || p.issues[0] || '暂无摘要'}
+              </p>
+            </Link>
+          ))}
         </div>
       </div>
 
@@ -276,8 +363,15 @@ export function TodayCommand() {
                     </div>
 
                     <div className="text-right ml-4">
-                      <div className="text-2xl font-semibold text-gray-900">{product.priority}</div>
-                      <div className="text-xs text-gray-500">优先级</div>
+                      <div className="flex flex-col items-end gap-1">
+                        {product.priorityLevel && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-medium">
+                            {product.priorityLevel}
+                          </span>
+                        )}
+                        <div className="text-2xl font-semibold text-gray-900">{product.priority}</div>
+                        <div className="text-xs text-gray-500">优先级</div>
+                      </div>
                     </div>
                   </div>
                 </Link>
@@ -298,7 +392,9 @@ export function TodayCommand() {
                 </div>
                 <div className="text-2xl font-semibold text-orange-700">{pendingActions.length}</div>
               </div>
-              <p className="text-sm text-orange-700">需要您今日审批</p>
+              <p className="text-sm text-orange-700">
+                需要您今日审批 · 待处理商品 {pendingProductCount} 个（去重）
+              </p>
             </div>
 
             <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
@@ -479,7 +575,14 @@ export function TodayCommand() {
                     <div className="text-sm text-gray-600">{product.brand}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-xl font-semibold text-gray-900">{product.priority}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xl font-semibold text-gray-900">{product.priority}</span>
+                      {product.priorityLevel && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-medium">
+                          {product.priorityLevel}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     {product.riskLevel === 'high' && (
@@ -529,6 +632,13 @@ export function TodayCommand() {
           </table>
         </div>
       </div>
+
+      <StrategySupportDrawer
+        open={strategySupportOpen}
+        onClose={() => setStrategySupportOpen(false)}
+        snippets={todayResolved.strategySnippets}
+        contextHint={`品类 ${todayCategoryKey} · 信号 ${todaySignalType}${firstOppGoodsId ? ` · ${firstOppGoodsId}` : ''}`}
+      />
     </div>
   );
 }

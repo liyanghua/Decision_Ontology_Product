@@ -24,6 +24,10 @@ export interface Product {
   issues: string[];
   rootCauses: string[];
   recommendedStrategies: string[];
+  /** Derived queue tier (CSV / live catalog only). */
+  priorityLevel?: 'P1' | 'P2' | 'P3';
+  /** Short diagnosis blurb from problem_analysis + improvement_suggestions. */
+  diagnosisBrief?: string;
 }
 
 export interface Evidence {
@@ -577,55 +581,4 @@ export const goalSummary: GoalSummary = {
   progress: 71.3,
   trend: 'down',
   deviation: -8.7,
-};
-
-export const knowledgeSupport = {
-  main_image_optimization: {
-    title: '主图优化最佳实践',
-    type: '策略指南',
-    content: `
-## 主图优化核心要点
-
-### 场景化展示
-- 展示产品在真实使用场景中的状态
-- 强调季节属性（如夏季清凉感）
-- 突出使用场景（如卧室、床上）
-
-### 卖点可视化
-- 将核心卖点通过视觉化方式呈现
-- 使用对比图展示产品优势
-- 突出材质、工艺等差异化特征
-
-### 品类基准参考
-- 床上四件套品类主图质量基准：0.75
-- 高点击率主图特征：清晰度高、构图简洁、卖点突出
-- 避免过度修图，保持真实感
-    `,
-    relatedStrategies: ['S001'],
-    source: '电商运营知识库 - 内容优化篇',
-  },
-  title_optimization: {
-    title: '商品标题优化指南',
-    type: '策略指南',
-    content: `
-## 标题优化策略
-
-### 关键词布局
-- 核心词前置（品类词、品牌词）
-- 长尾词补充（材质、功能、适用场景）
-- 避免关键词堆砌
-
-### 匹配度提升
-- 分析用户搜索词热度
-- 匹配高转化搜索意图
-- 定期更新季节性关键词
-
-### 标题结构
-- 品牌 + 核心卖点 + 品类 + 材质/功能
-- 控制在 30-60 字符
-- 避免特殊符号过多
-    `,
-    relatedStrategies: ['S002'],
-    source: '电商运营知识库 - SEO 优化篇',
-  },
 };

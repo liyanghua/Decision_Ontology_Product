@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { 
   AlertCircle, 
@@ -16,12 +16,14 @@ import {
   BookOpen,
   FileText,
   ChevronRight,
-  Info,
   Target,
   Zap,
-  Calendar
 } from 'lucide-react';
-import { actions, products, strategies, rootCauses } from '../data/mockData';
+import { actions, products, strategies } from '../data/mockData';
+import { inferPhaseForContext } from '../data/sop/diagnosisFlowSkeleton';
+import { inferProblemKeyFromText, resolveKnowledgeSupport } from '../data/expertKnowledge';
+import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
+import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
 
 export function ApprovalCenter() {
   const [selectedActionId, setSelectedActionId] = useState<string | null>(
@@ -29,13 +31,45 @@ export function ApprovalCenter() {
   );
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [approvalNote, setApprovalNote] = useState('');
+  const [flowSupportOpen, setFlowSupportOpen] = useState(false);
 
   const pendingActions = actions.filter(a => a.status === 'pending');
+
+  const approvalSopPhase = useMemo(
+    () =>
+      inferPhaseForContext({
+        route: 'approvals',
+        hasGoodsId: true,
+        hasMetricsRow: true,
+        hasStructuredDiagnosis: true,
+        pendingActionCount: pendingActions.length,
+      }),
+    [pendingActions.length],
+  );
+
   const selectedAction = actions.find(a => a.id === selectedActionId);
   const selectedProduct = selectedAction ? products.find(p => p.id === selectedAction.productId) : null;
   const relatedStrategy = selectedAction ? strategies[selectedAction.productId as keyof typeof strategies]?.find(
     s => s.id === selectedAction.strategyId
   ) : null;
+
+  const approvalResolved = useMemo(() => {
+    if (!selectedAction || !selectedProduct) {
+      return resolveKnowledgeSupport({
+        page: 'action_approval',
+        stageKey: approvalSopPhase,
+      });
+    }
+    return resolveKnowledgeSupport({
+      page: 'action_approval',
+      goodsId: selectedProduct.id,
+      category: selectedProduct.category,
+      problemKey: inferProblemKeyFromText(selectedAction.reason ?? ''),
+      actionKey: selectedAction.id,
+      riskKey: selectedAction.riskLevel,
+      stageKey: approvalSopPhase,
+    });
+  }, [selectedAction, selectedProduct, approvalSopPhase]);
 
   const handleApprove = () => {
     alert('动作已批准，将进入执行队列');
@@ -182,6 +216,14 @@ export function ApprovalCenter() {
       {/* Middle: Action Details */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="max-w-[900px] mx-auto space-y-6">
+          <SopFlowCompactBar
+            stageKey={approvalSopPhase}
+            onOpenFlow={() => setFlowSupportOpen(true)}
+          />
+          <p className="text-xs text-gray-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+            当前处于 SOP「优化动作」阶段：对动作清单进行评审与放行。审批通过后进入结果输出与归档。
+          </p>
+
           {/* Header */}
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <div className="flex items-start justify-between mb-4">
@@ -697,6 +739,12 @@ export function ApprovalCenter() {
       </div>
 
       {/* Params Modal */}
+      <FlowSupportDrawer
+        open={flowSupportOpen}
+        onClose={() => setFlowSupportOpen(false)}
+        flowBundle={approvalResolved.flowBundle}
+      />
+
       {showParamsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowParamsModal(false)} />

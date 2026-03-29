@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { 
   Play, 
@@ -10,12 +11,38 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { executions, actions } from '../data/mockData';
+import { inferPhaseForContext } from '../data/sop/diagnosisFlowSkeleton';
+import { resolveKnowledgeSupport } from '../data/expertKnowledge';
+import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
+import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
 
 export function ExecutionOutcome() {
+  const [flowSupportOpen, setFlowSupportOpen] = useState(false);
   const allExecutions = executions;
   const runningExecutions = executions.filter(e => e.status === 'running');
   const completedExecutions = executions.filter(e => e.status === 'completed');
   const failedExecutions = executions.filter(e => e.status === 'failed');
+
+  const executionSopPhase = useMemo(
+    () =>
+      inferPhaseForContext({
+        route: 'execution',
+        hasGoodsId: true,
+        hasMetricsRow: true,
+        hasStructuredDiagnosis: true,
+        pendingActionCount: 0,
+      }),
+    [],
+  );
+
+  const executionResolved = useMemo(
+    () =>
+      resolveKnowledgeSupport({
+        page: 'execution',
+        stageKey: executionSopPhase,
+      }),
+    [executionSopPhase],
+  );
 
   return (
     <div className="p-8 max-w-[1600px] mx-auto">
@@ -23,6 +50,16 @@ export function ExecutionOutcome() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">执行与结果</h1>
         <p className="text-gray-600">跟踪动作执行状态和效果反馈</p>
+      </div>
+
+      <div className="mb-8 space-y-2">
+        <SopFlowCompactBar
+          stageKey={executionSopPhase}
+          onOpenFlow={() => setFlowSupportOpen(true)}
+        />
+        <p className="text-xs text-gray-600">
+          当前贴近「结果输出 / 复盘跟踪」：执行侧请对照 Flow Support 中的执行提醒与风险检查项。
+        </p>
       </div>
 
       {/* Stats */}
@@ -264,6 +301,12 @@ export function ExecutionOutcome() {
           ))}
         </div>
       </div>
+
+      <FlowSupportDrawer
+        open={flowSupportOpen}
+        onClose={() => setFlowSupportOpen(false)}
+        flowBundle={executionResolved.flowBundle}
+      />
     </div>
   );
 }

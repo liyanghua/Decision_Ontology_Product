@@ -1,11 +1,9 @@
-import { useState } from 'react';
-import { useParams, Link } from 'react-router';
+import { useState, useEffect, useMemo } from 'react';
+import { useParams, Link, useNavigate } from 'react-router';
 import { 
   ArrowLeft, 
   AlertCircle, 
   AlertTriangle,
-  TrendingDown, 
-  TrendingUp,
   CheckCircle2,
   Clock,
   BookOpen,
@@ -13,26 +11,166 @@ import {
   X,
   Info,
   Target,
-  Zap,
   FileText,
   ShieldAlert,
   Calendar,
   ChevronRight,
   PlayCircle
 } from 'lucide-react';
-import { products, evidencePacks, rootCauses, strategies, actions, knowledgeSupport } from '../data/mockData';
+import { products, adsFactCatalog, availableStatDatesByProductId, listProducts } from '../data/liveCatalog';
+import {
+  getDetailMetricCells,
+  listMissingDetailKeys,
+  missingDetailLabels,
+  diagnosisGradeToLevel,
+  riskLevelLabelZh,
+} from '../data/adapters/detailViewMetrics';
+import { parseImprovementActionCards } from '../data/adapters/improvementActionParse';
+import { splitInsightBullets, splitHighlightCards } from '../data/adapters/diagnosisContentParse';
+import { inferPhaseForContext } from '../data/sop/diagnosisFlowSkeleton';
+import { inferProblemKeyFromText, resolveKnowledgeSupport } from '../data/expertKnowledge';
+import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
+import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
+import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDrawer';
+import { StrategySupportTrigger } from '../components/knowledge/StrategySupportTrigger';
 
 export function ProductDiagnosisDetail() {
+  const navigate = useNavigate();
   const { productId } = useParams();
-  const product = products.find(p => p.id === productId);
-  const evidence = evidencePacks[productId as keyof typeof evidencePacks] || [];
-  const causes = rootCauses[productId as keyof typeof rootCauses] || [];
-  const strategyList = strategies[productId as keyof typeof strategies] || [];
-  const productActions = actions.filter(a => a.productId === productId);
+  const statDates = productId ? (availableStatDatesByProductId[productId] ?? []) : [];
+  const [selectedStatistDate, setSelectedStatistDate] = useState('');
 
-  const [selectedVersion, setSelectedVersion] = useState('v2.3.1');
-  const [knowledgeDrawerOpen, setKnowledgeDrawerOpen] = useState(false);
-  const [selectedKnowledge, setSelectedKnowledge] = useState<string | null>(null);
+  useEffect(() => {
+    if (!productId) {
+      setSelectedStatistDate('');
+      return;
+    }
+    const next = availableStatDatesByProductId[productId]?.[0] ?? '';
+    setSelectedStatistDate(next);
+  }, [productId]);
+
+  const diagnosisVm = useMemo(
+    () =>
+      productId
+        ? adsFactCatalog.getProductDiagnosis(productId, selectedStatistDate || undefined)
+        : undefined,
+    [productId, selectedStatistDate],
+  );
+
+  const product = diagnosisVm?.legacyProduct ?? products.find((p) => p.id === productId);
+  const evidence = diagnosisVm?.evidencePack.evidences ?? [];
+  const causes = diagnosisVm?.rootCauses ?? [];
+  const strategyList = diagnosisVm?.strategies ?? [];
+  const productActions = diagnosisVm?.actions ?? [];
+  const structured = diagnosisVm?.structured;
+
+  const productOptions = useMemo(() => listProducts(), []);
+  const metricCells = useMemo(
+    () => getDetailMetricCells(diagnosisVm?.rawRow ?? {}),
+    [diagnosisVm],
+  );
+  const missingMetricKeys = useMemo(
+    () => listMissingDetailKeys(diagnosisVm?.rawRow),
+    [diagnosisVm],
+  );
+  const missingFieldLabels = useMemo(
+    () => missingDetailLabels(missingMetricKeys),
+    [missingMetricKeys],
+  );
+  const riskLevel = useMemo(
+    () => diagnosisGradeToLevel(diagnosisVm?.diagnosis_grade),
+    [diagnosisVm],
+  );
+  const improvementCards = useMemo(
+    () => parseImprovementActionCards(structured?.improvement_suggestions),
+    [structured?.improvement_suggestions],
+  );
+  const conclusionCards = useMemo(
+    () => splitHighlightCards(structured?.core_conclusion),
+    [structured?.core_conclusion],
+  );
+  const problemBullets = useMemo(
+    () => splitInsightBullets(structured?.problem_analysis),
+    [structured?.problem_analysis],
+  );
+  const growthBullets = useMemo(
+    () => splitInsightBullets(structured?.growth_analysis),
+    [structured?.growth_analysis],
+  );
+  const missingDataCards = useMemo(
+    () => splitHighlightCards(structured?.missing_data_impact),
+    [structured?.missing_data_impact],
+  );
+  const thoughtBullets = useMemo(
+    () => splitInsightBullets(structured?.analysis_thought, 4),
+    [structured?.analysis_thought],
+  );
+
+  const pendingActionCount = useMemo(
+    () => productActions.filter((a) => a.status === 'pending').length,
+    [productActions],
+  );
+
+  const sopFlowCtx = useMemo(
+    () => ({
+      route: 'detail' as const,
+      hasGoodsId: Boolean(productId),
+      hasMetricsRow: Boolean(
+        diagnosisVm?.rawRow &&
+          String(diagnosisVm.statistDate ?? '').trim() !== '',
+      ),
+      hasStructuredDiagnosis: Boolean(
+        structured &&
+          ((structured.core_conclusion?.trim() ?? '') !== '' ||
+            (structured.problem_analysis?.trim() ?? '') !== ''),
+      ),
+      pendingActionCount,
+    }),
+    [productId, diagnosisVm, structured, pendingActionCount],
+  );
+
+  const currentSopPhase = useMemo(
+    () => inferPhaseForContext(sopFlowCtx),
+    [sopFlowCtx],
+  );
+
+  const flowActionKey = useMemo(
+    () => productActions.find((a) => a.status === 'pending')?.id ?? null,
+    [productActions],
+  );
+
+  const resolvedKnowledge = useMemo(() => {
+    if (!productId) {
+      return resolveKnowledgeSupport({
+        page: 'product_detail',
+        stageKey: 'prepare',
+      });
+    }
+    const prod = products.find((p) => p.id === productId);
+    const line =
+      problemBullets[0] ?? prod?.issues?.[0] ?? '';
+    const pk = inferProblemKeyFromText(line);
+    return resolveKnowledgeSupport({
+      page: 'product_detail',
+      goodsId: productId,
+      category: prod?.category,
+      problemKey: pk,
+      rootCauseKey: causes[0]?.id,
+      strategyKey: strategyList[0]?.id,
+      actionKey: flowActionKey ?? undefined,
+      stageKey: currentSopPhase,
+    });
+  }, [
+    productId,
+    problemBullets,
+    causes,
+    strategyList,
+    flowActionKey,
+    currentSopPhase,
+  ]);
+
+  const [flowSupportOpen, setFlowSupportOpen] = useState(false);
+  const [strategySupportOpen, setStrategySupportOpen] = useState(false);
   const [selectedRootCause, setSelectedRootCause] = useState<string | null>(null);
   const [explainDrawerOpen, setExplainDrawerOpen] = useState(false);
 
@@ -52,10 +190,8 @@ export function ProductDiagnosisDetail() {
     );
   }
 
-  const openKnowledgeDrawer = (knowledgeKey: string) => {
-    setSelectedKnowledge(knowledgeKey);
-    setKnowledgeDrawerOpen(true);
-  };
+  const displayProblemItems =
+    problemBullets.length > 0 ? problemBullets : product.issues;
 
   const openRootCauseExplain = (rootCauseId: string) => {
     setSelectedRootCause(rootCauseId);
@@ -72,35 +208,94 @@ export function ProductDiagnosisDetail() {
             <ArrowLeft className="w-4 h-4" />
             返回操盘台
           </Link>
-          
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-mono text-gray-500">{product.id}</span>
-            {product.riskLevel === 'high' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-700 text-xs rounded-full">
-                <AlertCircle className="w-3 h-3" />
-                高风险
+
+          <div className="mb-4">
+            <label className="text-xs font-medium text-gray-600 block mb-1">切换商品 goods_id</label>
+            <select
+              value={productId ?? ''}
+              onChange={(e) => navigate(`/products/${e.target.value}`)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {productOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.id}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 mb-3 space-y-2 text-xs">
+            <div className="flex justify-between gap-2">
+              <span className="text-gray-500">goods_id</span>
+              <span className="font-mono text-gray-900">{diagnosisVm?.goodsId ?? product.id}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-gray-500">statist_date</span>
+              <span className="font-mono text-gray-900">{diagnosisVm?.statistDate ?? '—'}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-gray-500">diagnosis_grade</span>
+              <span className="font-mono text-gray-900">{diagnosisVm?.diagnosis_grade || '—'}</span>
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="text-xs text-gray-600 mb-2">风险等级（可视化）</div>
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium ${
+                  riskLevel === 'high'
+                    ? 'bg-red-100 text-red-800'
+                    : riskLevel === 'medium'
+                      ? 'bg-orange-100 text-orange-800'
+                      : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                <ShieldAlert className="w-3 h-3" />
+                {riskLevelLabelZh(riskLevel)}风险
               </span>
-            )}
+              <span className="text-xs text-gray-500">原始 grade: {diagnosisVm?.diagnosis_grade || '—'}</span>
+            </div>
+            <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  riskLevel === 'high'
+                    ? 'w-full bg-red-500'
+                    : riskLevel === 'medium'
+                      ? 'w-2/3 bg-orange-400'
+                      : 'w-1/3 bg-emerald-500'
+                }`}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+              <span>低</span>
+              <span>中</span>
+              <span>高</span>
+            </div>
           </div>
           
           <h2 className="font-semibold text-gray-900 mb-1">{product.name}</h2>
           <div className="text-sm text-gray-600">{product.brand} · {product.category}</div>
         </div>
 
-        {/* Version Selector */}
+        {/* Statist date selector (replaces static version tags) */}
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2 mb-3">
             <FileText className="w-4 h-4 text-gray-600" />
-            <h3 className="text-sm font-medium text-gray-900">诊断版本</h3>
+            <h3 className="text-sm font-medium text-gray-900">统计日</h3>
           </div>
           <select 
-            value={selectedVersion}
-            onChange={(e) => setSelectedVersion(e.target.value)}
+            value={selectedStatistDate}
+            onChange={(e) => setSelectedStatistDate(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="v2.3.1">v2.3.1 - 当前版本</option>
-            <option value="v2.3.0">v2.3.0 - 2026-03-27</option>
-            <option value="v2.2.9">v2.2.9 - 2026-03-26</option>
+            {statDates.length === 0 ? (
+              <option value="">暂无可用日期</option>
+            ) : (
+              statDates.map((d) => (
+                <option key={d} value={d}>统计日 {d}</option>
+              ))
+            )}
           </select>
         </div>
 
@@ -112,12 +307,12 @@ export function ProductDiagnosisDetail() {
           </div>
           <div className="space-y-2">
             <div className="bg-gray-50 rounded-lg p-3">
-              <div className="text-xs text-gray-600 mb-1">诊断时间</div>
-              <div className="text-sm font-medium text-gray-900">2026-03-28 09:00</div>
+              <div className="text-xs text-gray-600 mb-1">统计日期</div>
+              <div className="text-sm font-medium text-gray-900">{diagnosisVm?.statistDate ?? '—'}</div>
             </div>
             <div className="bg-gray-50 rounded-lg p-3">
-              <div className="text-xs text-gray-600 mb-1">数据窗口</div>
-              <div className="text-sm font-medium text-gray-900">最近 7 天</div>
+              <div className="text-xs text-gray-600 mb-1">数据入库</div>
+              <div className="text-sm font-medium text-gray-900">{diagnosisVm?.dataLoadTime || '—'}</div>
             </div>
           </div>
         </div>
@@ -127,41 +322,40 @@ export function ProductDiagnosisDetail() {
           <div className="px-6 py-4">
             <div className="flex items-center gap-2 mb-3">
               <History className="w-4 h-4 text-gray-600" />
-              <h3 className="text-sm font-medium text-gray-900">历史诊断</h3>
+              <h3 className="text-sm font-medium text-gray-900">按统计日切换</h3>
             </div>
             
             <div className="space-y-2">
-              <button className="w-full bg-blue-50 border border-blue-200 rounded-lg p-3 text-left">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="text-sm font-medium text-blue-900">v2.3.1</div>
-                  <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">当前</span>
-                </div>
-                <div className="text-xs text-blue-700 mb-2">2026-03-28 09:00:00</div>
-                <div className="flex items-center gap-3 text-xs text-blue-600">
-                  <span>{product.problemCount} 问题</span>
-                  <span>·</span>
-                  <span>{causes.length} 根因</span>
-                  <span>·</span>
-                  <span>{strategyList.length} 策略</span>
-                </div>
-              </button>
-
-              <button className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-left hover:bg-gray-100 transition-colors">
-                <div className="text-sm font-medium text-gray-900 mb-2">v2.3.0</div>
-                <div className="text-xs text-gray-600 mb-2">2026-03-27 09:00:00</div>
-                <div className="flex items-center gap-3 text-xs text-gray-600">
-                  <span>2 问题</span>
-                  <span>·</span>
-                  <span>2 根因</span>
-                  <span>·</span>
-                  <span>2 策略</span>
-                </div>
-              </button>
-
-              <button className="w-full text-sm text-blue-600 hover:text-blue-700 py-2 flex items-center justify-center gap-1">
-                查看版本差异
-                <ChevronRight className="w-4 h-4" />
-              </button>
+              {statDates.map((d) => {
+                const vmDay = productId ? adsFactCatalog.getProductDiagnosis(productId, d) : undefined;
+                const active = d === selectedStatistDate;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setSelectedStatistDate(d)}
+                    className={`w-full rounded-lg p-3 text-left border transition-colors ${
+                      active
+                        ? 'bg-blue-50 border-blue-200'
+                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className={`text-sm font-medium ${active ? 'text-blue-900' : 'text-gray-900'}`}>{d}</div>
+                      {active && (
+                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">当前</span>
+                      )}
+                    </div>
+                    <div className={`flex items-center gap-3 text-xs ${active ? 'text-blue-600' : 'text-gray-600'}`}>
+                      <span>{vmDay?.legacyProduct.problemCount ?? '—'} 问题</span>
+                      <span>·</span>
+                      <span>{vmDay?.rootCauses.length ?? '—'} 根因</span>
+                      <span>·</span>
+                      <span>{vmDay?.strategies.length ?? '—'} 策略</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -186,48 +380,170 @@ export function ProductDiagnosisDetail() {
       {/* Middle: Main Diagnosis Flow */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="max-w-[900px] mx-auto space-y-6">
-          {/* Core Metrics */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">核心经营指标</h3>
-            <div className="grid grid-cols-4 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-xs text-gray-600 mb-1">CTR 7日</div>
-                <div className="flex items-baseline gap-2 mb-1">
-                  <div className={`text-2xl font-semibold ${
-                    product.metrics.ctr_7d < product.metrics.category_ctr_p30 ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    {product.metrics.ctr_7d}%
-                  </div>
-                  <TrendingDown className="w-5 h-5 text-red-500" />
-                </div>
-                <div className="text-xs text-gray-500">基准 {product.metrics.category_ctr_p30}%</div>
-              </div>
-
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-xs text-gray-600 mb-1">曝光量</div>
-                <div className="text-2xl font-semibold text-gray-900 mb-1">
-                  {(product.metrics.impression_7d / 1000).toFixed(1)}K
-                </div>
-                <div className="text-xs text-gray-500">7日总计</div>
-              </div>
-
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-xs text-gray-600 mb-1">转化率</div>
-                <div className="text-2xl font-semibold text-gray-900 mb-1">
-                  {product.metrics.conversion_7d}%
-                </div>
-                <div className="text-xs text-gray-500">环比 -5.2%</div>
-              </div>
-
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-xs text-gray-600 mb-1">收入 7日</div>
-                <div className="text-2xl font-semibold text-gray-900 mb-1">
-                  ¥{(product.metrics.revenue_7d / 1000).toFixed(1)}K
-                </div>
-                <div className="text-xs text-gray-500">环比 -12.3%</div>
+          {missingFieldLabels.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex gap-3 text-sm text-amber-950">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-600" />
+              <div>
+                <div className="font-medium mb-1">数据字段缺失提示</div>
+                <p className="text-amber-900/90 text-xs leading-relaxed">
+                  以下指标在本行 CSV 中未返回，详情区已用「—」占位，请关注数据采集链路：
+                  {missingFieldLabels.join('、')}
+                </p>
               </div>
             </div>
+          )}
+
+          <SopFlowCompactBar
+            stageKey={currentSopPhase}
+            onOpenFlow={() => setFlowSupportOpen(true)}
+          />
+          {pendingActionCount > 0 && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              存在待审批动作，请前往「动作审批」完成优化动作阶段评审。
+            </p>
+          )}
+
+          {/* Core Metrics — 来自 rawRow（10 项） */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h3 className="font-semibold text-gray-900 mb-4">核心经营指标（真实字段）</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {metricCells.map((cell) => (
+                <div
+                  key={cell.key}
+                  className={`rounded-lg border p-3 ${
+                    cell.rawMissing ? 'border-amber-100 bg-amber-50/40' : 'border-gray-100 bg-gray-50'
+                  }`}
+                >
+                  <div className="text-xs text-gray-600 mb-1">{cell.label}</div>
+                  <div className={`text-lg font-semibold ${cell.rawMissing ? 'text-amber-800' : 'text-gray-900'}`}>
+                    {cell.displayValue}
+                  </div>
+                  {cell.rawMissing && (
+                    <div className="text-[10px] text-amber-700 mt-1">未返回</div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
+
+          {structured && (
+            <div className="space-y-4">
+              {thoughtBullets.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="font-semibold text-gray-900 mb-3">分析思路</h3>
+                  <ul className="space-y-2">
+                    {thoughtBullets.map((line, i) => (
+                      <li key={i} className="text-sm text-gray-700 pl-3 border-l-2 border-gray-200">
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="font-semibold text-gray-900 mb-3">核心结论</h3>
+                {conclusionCards.length > 0 ? (
+                  <div className="space-y-2">
+                    {conclusionCards.map((line, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-sm text-gray-900"
+                      >
+                        {line}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">暂无核心结论</p>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="font-semibold text-gray-900 mb-3">问题剖析</h3>
+                {problemBullets.length > 0 ? (
+                  <ul className="space-y-2">
+                    {problemBullets.map((line, i) => (
+                      <li
+                        key={i}
+                        className="text-sm text-gray-800 rounded-lg border border-red-100 bg-red-50/50 px-3 py-2"
+                      >
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-500">暂无问题剖析</p>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="font-semibold text-gray-900 mb-3">增长分析</h3>
+                {growthBullets.length > 0 ? (
+                  <ul className="space-y-2">
+                    {growthBullets.map((line, i) => (
+                      <li
+                        key={i}
+                        className="text-sm text-gray-800 rounded-lg border border-green-100 bg-green-50/50 px-3 py-2"
+                      >
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-500">暂无增长分析</p>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-amber-200 p-6">
+                <h3 className="font-semibold text-gray-900 mb-3">改进建议（可执行动作卡）</h3>
+                {improvementCards.length > 0 ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {improvementCards.map((card, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-amber-100 bg-amber-50/40 p-4 flex flex-col gap-2 text-sm"
+                      >
+                        <div className="font-semibold text-amber-950">{card.title || `动作 ${i + 1}`}</div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-gray-500">预期指标 / 路径</div>
+                          <div className="text-gray-800">{card.expectedMetric || '—'}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-gray-500">目标提升</div>
+                          <div className="text-amber-900 font-medium">{card.targetLift || '—'}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-gray-500">验收说明</div>
+                          <div className="text-gray-700">{card.validationNote || '—'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">暂无改进建议</p>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="font-semibold text-gray-900 mb-3">数据缺失与影响</h3>
+                {missingDataCards.length > 0 ? (
+                  <div className="space-y-2">
+                    {missingDataCards.map((line, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-purple-100 bg-purple-50/40 px-3 py-2 text-sm text-gray-800"
+                      >
+                        {line}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">暂无缺失说明</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Step 1: Evidence Pack */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -310,7 +626,7 @@ export function ProductDiagnosisDetail() {
             
             <div className="p-6">
               <ul className="space-y-3">
-                {product.issues.map((issue, idx) => (
+                {displayProblemItems.map((issue, idx) => (
                   <li key={idx} className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
                     <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                       <span className="text-sm font-semibold text-red-700">{idx + 1}</span>
@@ -435,13 +751,7 @@ export function ProductDiagnosisDetail() {
                     </div>
                     
                     <button
-                      onClick={() => {
-                        if (strategy.id === 'S001') {
-                          openKnowledgeDrawer('main_image_optimization');
-                        } else if (strategy.id === 'S002') {
-                          openKnowledgeDrawer('title_optimization');
-                        }
-                      }}
+                      onClick={() => setStrategySupportOpen(true)}
                       className="px-3 py-2 border border-purple-300 text-purple-700 text-sm rounded-lg hover:bg-purple-50 flex items-center gap-2"
                     >
                       <BookOpen className="w-4 h-4" />
@@ -537,21 +847,21 @@ export function ProductDiagnosisDetail() {
             </div>
             
             <div className="p-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="text-sm text-green-700 mb-2">主图优化策略</div>
-                  <div className="text-2xl font-semibold text-green-900 mb-1">+40-60%</div>
-                  <div className="text-sm text-green-700">CTR 预期提升</div>
-                  <div className="text-xs text-green-600 mt-2">7日增收 ¥8,000-12,000</div>
+              {improvementCards.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {improvementCards.map((card, i) => (
+                    <div key={i} className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <div className="text-sm text-green-800 font-medium mb-1">{card.title}</div>
+                      <div className="text-xl font-semibold text-green-900 mb-1">
+                        {card.targetLift || '待量化'}
+                      </div>
+                      <div className="text-xs text-green-700 line-clamp-3">{card.expectedMetric || card.validationNote}</div>
+                    </div>
+                  ))}
                 </div>
-
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="text-sm text-green-700 mb-2">标题优化策略</div>
-                  <div className="text-2xl font-semibold text-green-900 mb-1">+25-35%</div>
-                  <div className="text-sm text-green-700">搜索流量预期提升</div>
-                  <div className="text-xs text-green-600 mt-2">曝光量增加 5,000+</div>
-                </div>
-              </div>
+              ) : (
+                <p className="text-sm text-gray-500 text-center py-4">暂无由建议解析的预期效果摘要</p>
+              )}
             </div>
           </div>
         </div>
@@ -559,43 +869,27 @@ export function ProductDiagnosisDetail() {
 
       {/* Right Sidebar: Knowledge & Actions */}
       <div className="w-96 bg-white border-l border-gray-200 flex flex-col overflow-y-auto">
-        {/* Knowledge Support */}
+        {/* Strategy Support（爆款营销方案 SOP · 片段） */}
         <div className="border-b border-gray-200">
-          <div className="px-6 py-4 bg-purple-50 border-b border-purple-200">
+          <div className="px-6 py-4 bg-violet-50 border-b border-violet-200">
             <div className="flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-purple-600" />
-              <h3 className="font-semibold text-purple-900">知识支持</h3>
+              <BookOpen className="w-5 h-5 text-violet-600" />
+              <h3 className="font-semibold text-violet-900">策略与机会支持</h3>
             </div>
+            <p className="text-xs text-violet-800/90 mt-1">
+              基于当前商品与问题语境的短片段，非诊断真源。
+            </p>
           </div>
-          
-          <div className="p-6 space-y-3">
-            <button 
-              onClick={() => openKnowledgeDrawer('main_image_optimization')}
-              className="w-full bg-purple-50 border border-purple-200 rounded-lg p-3 text-left hover:bg-purple-100 transition-colors"
-            >
-              <div className="text-sm font-medium text-purple-900 mb-1">主图优化最佳实践</div>
-              <div className="text-xs text-purple-700 mb-2">
-                针对主图质量评分低的优化指南
-              </div>
-              <div className="flex items-center gap-1 text-xs text-purple-600">
-                查看详情
-                <ChevronRight className="w-3 h-3" />
-              </div>
-            </button>
 
-            <button 
-              onClick={() => openKnowledgeDrawer('title_optimization')}
-              className="w-full bg-purple-50 border border-purple-200 rounded-lg p-3 text-left hover:bg-purple-100 transition-colors"
-            >
-              <div className="text-sm font-medium text-purple-900 mb-1">标题优化指南</div>
-              <div className="text-xs text-purple-700 mb-2">
-                提升标题匹配度的策略方法
-              </div>
-              <div className="flex items-center gap-1 text-xs text-purple-600">
-                查看详情
-                <ChevronRight className="w-3 h-3" />
-              </div>
-            </button>
+          <div className="p-6 space-y-3">
+            <StrategySupportTrigger
+              onClick={() => setStrategySupportOpen(true)}
+              className="w-full justify-center"
+            />
+            <p className="text-xs text-gray-600">
+              打开侧栏可浏览：爆款路径、词路与市场、视觉定位、主图/详情/SKU
+              等分组建议；内容来自《爆款营销方案 SOP》演示片段。
+            </p>
           </div>
         </div>
 
@@ -720,66 +1014,18 @@ export function ProductDiagnosisDetail() {
         </div>
       </div>
 
-      {/* Knowledge Drawer */}
-      {knowledgeDrawerOpen && selectedKnowledge && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setKnowledgeDrawerOpen(false)} />
-          <div className="absolute right-0 top-0 bottom-0 w-[600px] bg-white shadow-xl flex flex-col">
-            <div className="h-16 border-b border-gray-200 flex items-center justify-between px-6">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-purple-600" />
-                <h2 className="font-semibold text-gray-900">知识支持</h2>
-              </div>
-              <button
-                onClick={() => setKnowledgeDrawerOpen(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-auto p-6">
-              {selectedKnowledge && knowledgeSupport[selectedKnowledge as keyof typeof knowledgeSupport] && (
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                    {knowledgeSupport[selectedKnowledge as keyof typeof knowledgeSupport].title}
-                  </h3>
-                  <div className="text-sm text-gray-600 mb-6">
-                    {knowledgeSupport[selectedKnowledge as keyof typeof knowledgeSupport].type}
-                  </div>
-                  
-                  <div className="prose prose-sm max-w-none">
-                    <div className="whitespace-pre-line text-gray-700">
-                      {knowledgeSupport[selectedKnowledge as keyof typeof knowledgeSupport].content}
-                    </div>
-                  </div>
+      <FlowSupportDrawer
+        open={flowSupportOpen}
+        onClose={() => setFlowSupportOpen(false)}
+        flowBundle={resolvedKnowledge.flowBundle}
+      />
 
-                  <div className="mt-6 pt-6 border-t border-gray-200">
-                    <div className="text-sm text-gray-600 mb-2">来源</div>
-                    <div className="text-sm text-gray-900">
-                      {knowledgeSupport[selectedKnowledge as keyof typeof knowledgeSupport].source}
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <div className="text-sm text-gray-600 mb-2">相关策略</div>
-                    <div className="flex flex-wrap gap-2">
-                      {knowledgeSupport[selectedKnowledge as keyof typeof knowledgeSupport].relatedStrategies.map((sid: string) => {
-                        const strategy = strategyList.find(s => s.id === sid);
-                        return strategy ? (
-                          <span key={sid} className="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded-full">
-                            {strategy.name}
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <StrategySupportDrawer
+        open={strategySupportOpen}
+        onClose={() => setStrategySupportOpen(false)}
+        snippets={resolvedKnowledge.strategySnippets}
+        contextHint={`goods_id ${product.id} · 根因/策略/问题语境已参与匹配`}
+      />
 
       {/* Explain Drawer */}
       {explainDrawerOpen && (

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { 
   AlertCircle, 
   AlertTriangle, 
@@ -16,17 +16,50 @@ import {
   Info,
   Activity
 } from 'lucide-react';
-import { products, evidencePacks, rootCauses, strategies, actions } from '../data/mockData';
+import { products, evidencePacks, rootCauses, strategies, actions } from '../data/liveCatalog';
+import { inferProblemKeyFromText, resolveKnowledgeSupport } from '../data/expertKnowledge';
+import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDrawer';
+import { StrategySupportTrigger } from '../components/knowledge/StrategySupportTrigger';
+
+function priorityLevelClass(level: string | undefined): string {
+  if (level === 'P1') return 'bg-red-100 text-red-800 border-red-200';
+  if (level === 'P2') return 'bg-amber-100 text-amber-900 border-amber-200';
+  return 'bg-gray-100 text-gray-700 border-gray-200';
+}
 
 export function ProductActionBoard() {
-  const [selectedProductId, setSelectedProductId] = useState(products[0].id);
-  const selectedProduct = products.find(p => p.id === selectedProductId);
+  const navigate = useNavigate();
+  const [selectedProductId, setSelectedProductId] = useState(products[0]?.id ?? '');
+  const [strategySupportOpen, setStrategySupportOpen] = useState(false);
+  const selectedProduct = products.find((p) => p.id === selectedProductId);
+
+  useEffect(() => {
+    if (!products.length) return;
+    if (!products.some((p) => p.id === selectedProductId)) {
+      setSelectedProductId(products[0].id);
+    }
+  }, [products, selectedProductId]);
   const evidence = evidencePacks[selectedProductId as keyof typeof evidencePacks] || [];
   const causes = rootCauses[selectedProductId as keyof typeof rootCauses] || [];
   const strategyList = strategies[selectedProductId as keyof typeof strategies] || [];
   const productActions = actions.filter(a => a.productId === selectedProductId);
   const pendingActions = productActions.filter(a => a.status === 'pending');
   const runningActions = productActions.filter(a => a.status === 'running');
+
+  const boardResolved = useMemo(() => {
+    if (!selectedProduct) {
+      return resolveKnowledgeSupport({ page: 'product_action_board' });
+    }
+    const line = selectedProduct.issues[0] ?? '';
+    const pk = inferProblemKeyFromText(line);
+    return resolveKnowledgeSupport({
+      page: 'product_action_board',
+      goodsId: selectedProductId,
+      category: selectedProduct.category,
+      problemKey: pk,
+      rootCauseKey: causes[0]?.id,
+    });
+  }, [selectedProduct, selectedProductId, causes]);
 
   if (!selectedProduct) return null;
 
@@ -60,7 +93,11 @@ export function ProductActionBoard() {
           {products.map((product, index) => (
             <button
               key={product.id}
-              onClick={() => setSelectedProductId(product.id)}
+              type="button"
+              onClick={() => {
+                setSelectedProductId(product.id);
+                navigate(`/products/${product.id}`);
+              }}
               className={`w-full px-6 py-4 border-b border-gray-100 text-left transition-colors ${
                 selectedProductId === product.id
                   ? 'bg-blue-50 border-l-4 border-l-blue-600'
@@ -100,16 +137,27 @@ export function ProductActionBoard() {
                 </div>
 
                 <div className="text-right flex-shrink-0">
-                  <div className="text-lg font-semibold text-gray-900">{product.priority}</div>
+                  <div className="flex items-center justify-end gap-1.5 mb-0.5">
+                    {product.priorityLevel && (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${priorityLevelClass(product.priorityLevel)}`}
+                      >
+                        {product.priorityLevel}
+                      </span>
+                    )}
+                    <div className="text-lg font-semibold text-gray-900">{product.priority}</div>
+                  </div>
                   <div className="text-xs text-gray-500">优先级</div>
                 </div>
               </div>
 
-              {/* Problem */}
-              {product.issues.length > 0 && (
-                <div className="flex items-start gap-1.5 text-xs text-red-600 mb-2">
-                  <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                  <span className="line-clamp-1">{product.issues[0]}</span>
+              {/* Diagnosis brief / 问题摘要 */}
+              {(product.diagnosisBrief || product.issues.length > 0) && (
+                <div className="flex items-start gap-1.5 text-xs text-gray-700 mb-2">
+                  <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5 text-red-500" />
+                  <span className="line-clamp-2 text-left">
+                    {product.diagnosisBrief || product.issues[0]}
+                  </span>
                 </div>
               )}
 
@@ -174,7 +222,16 @@ export function ProductActionBoard() {
               </div>
 
               <div className="text-right">
-                <div className="text-3xl font-semibold text-gray-900">{selectedProduct.priority}</div>
+                <div className="flex items-center justify-end gap-2 mb-1">
+                  {selectedProduct.priorityLevel && (
+                    <span
+                      className={`text-xs px-2 py-1 rounded-md border font-semibold ${priorityLevelClass(selectedProduct.priorityLevel)}`}
+                    >
+                      {selectedProduct.priorityLevel}
+                    </span>
+                  )}
+                  <div className="text-3xl font-semibold text-gray-900">{selectedProduct.priority}</div>
+                </div>
                 <div className="text-sm text-gray-500">优先级评分</div>
               </div>
             </div>
@@ -229,6 +286,12 @@ export function ProductActionBoard() {
               </div>
             </div>
             <div className="p-6">
+              {selectedProduct.diagnosisBrief && (
+                <div className="mb-4 rounded-lg border border-red-100 bg-red-50/50 px-4 py-3 text-sm text-red-900">
+                  <span className="font-medium">诊断摘要 · </span>
+                  {selectedProduct.diagnosisBrief}
+                </div>
+              )}
               <ul className="space-y-2">
                 {selectedProduct.issues.map((issue, idx) => (
                   <li key={idx} className="flex items-start gap-2 text-red-800">
@@ -360,8 +423,9 @@ export function ProductActionBoard() {
                 <div>
                   <div className="font-medium text-red-900 mb-1">风险提醒</div>
                   <div className="text-sm text-red-700">
-                    该商品优先级评分 {selectedProduct.priority}，风险等级高，建议立即处理。
-                    当前 CTR 持续低于基准，可能影响整体 GMV 达成。
+                    该商品优先级评分 {selectedProduct.priority}
+                    {selectedProduct.priorityLevel ? `（${selectedProduct.priorityLevel}）` : ''}
+                    ，风险等级高，建议立即处理。当前 CTR 持续低于基准，可能影响整体 GMV 达成。
                   </div>
                 </div>
               </div>
@@ -463,37 +527,23 @@ export function ProductActionBoard() {
           </div>
         )}
 
-        {/* Knowledge Support */}
+        {/* Strategy Support */}
         <div className="border-b border-gray-200">
-          <div className="px-6 py-4 bg-purple-50 border-b border-purple-200">
+          <div className="px-6 py-4 bg-violet-50 border-b border-violet-200">
             <div className="flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-purple-600" />
-              <h3 className="font-semibold text-purple-900">知识支持</h3>
+              <BookOpen className="w-5 h-5 text-violet-600" />
+              <h3 className="font-semibold text-violet-900">策略与机会支持</h3>
             </div>
+            <p className="text-xs text-violet-800/90 mt-1">
+              结合当前选中商品与首选问题的短片段参考。
+            </p>
           </div>
-          
-          <div className="p-6 space-y-3">
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-              <div className="text-sm font-medium text-purple-900 mb-1">主图优化最佳实践</div>
-              <div className="text-xs text-purple-700 mb-3">
-                针对主图质量评分低的优化指南
-              </div>
-              <button className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1">
-                查看详情
-                <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
 
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-              <div className="text-sm font-medium text-purple-900 mb-1">标题优化指南</div>
-              <div className="text-xs text-purple-700 mb-3">
-                提升标题匹配度的策略方法
-              </div>
-              <button className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1">
-                查看详情
-                <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
+          <div className="p-6 space-y-3">
+            <StrategySupportTrigger
+              onClick={() => setStrategySupportOpen(true)}
+              className="w-full justify-center"
+            />
           </div>
         </div>
 
@@ -561,6 +611,13 @@ export function ProductActionBoard() {
           )}
         </div>
       </div>
+
+      <StrategySupportDrawer
+        open={strategySupportOpen}
+        onClose={() => setStrategySupportOpen(false)}
+        snippets={boardResolved.strategySnippets}
+        contextHint={`${selectedProductId} · ${selectedProduct.name} · 根因 ${causes[0]?.id ?? '—'}`}
+      />
     </div>
   );
 }
