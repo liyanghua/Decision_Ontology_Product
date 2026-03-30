@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { 
   AlertCircle, 
   AlertTriangle,
@@ -19,16 +19,30 @@ import {
   Target,
   Zap,
 } from 'lucide-react';
-import { actions, products, strategies } from '../data/mockData';
+import { actions, products, strategies } from '../data/liveCatalog';
+import { executions } from '../data/mockData';
+import { mapLegacyActionToPhase } from '../data/taskFlow';
+import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
+import { TaskFlowSidePanel } from '../components/taskFlow/TaskFlowSidePanel';
+import { TaskStateBadge } from '../components/taskFlow/TaskStateBadge';
 import { inferPhaseForContext } from '../data/sop/diagnosisFlowSkeleton';
 import { inferProblemKeyFromText, resolveKnowledgeSupport } from '../data/expertKnowledge';
 import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
 import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
 
 export function ApprovalCenter() {
+  const { getOverride } = useTaskFlowOverrides();
+  const [searchParams] = useSearchParams();
   const [selectedActionId, setSelectedActionId] = useState<string | null>(
-    actions.filter(a => a.status === 'pending')[0]?.id || null
+    actions.filter((a) => a.status === 'pending')[0]?.id || null,
   );
+
+  useEffect(() => {
+    const aid = searchParams.get('actionId')?.trim();
+    if (aid && actions.some((a) => a.id === aid)) {
+      setSelectedActionId(aid);
+    }
+  }, [searchParams]);
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [approvalNote, setApprovalNote] = useState('');
   const [flowSupportOpen, setFlowSupportOpen] = useState(false);
@@ -48,6 +62,12 @@ export function ApprovalCenter() {
   );
 
   const selectedAction = actions.find(a => a.id === selectedActionId);
+  const selectedExecution = selectedAction
+    ? executions.find((e) => e.actionId === selectedAction.id) ?? null
+    : null;
+  const selectedTaskView = selectedAction
+    ? mapLegacyActionToPhase(selectedAction, selectedExecution, getOverride(selectedAction.id))
+    : null;
   const selectedProduct = selectedAction ? products.find(p => p.id === selectedAction.productId) : null;
   const relatedStrategy = selectedAction ? strategies[selectedAction.productId as keyof typeof strategies]?.find(
     s => s.id === selectedAction.strategyId
@@ -124,6 +144,8 @@ export function ApprovalCenter() {
         <div className="flex-1 overflow-y-auto">
           {pendingActions.map((action, index) => {
             const product = products.find(p => p.id === action.productId);
+            const exec = executions.find((e) => e.actionId === action.id) ?? null;
+            const rowView = mapLegacyActionToPhase(action, exec, getOverride(action.id));
             return (
               <button
                 key={action.id}
@@ -145,8 +167,9 @@ export function ApprovalCenter() {
                   </div>
                   
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-xs font-mono text-gray-500">{action.id}</span>
+                      <TaskStateBadge phase={rowView.phase} className="shrink-0" />
                       {action.riskLevel === 'high' && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-50 text-red-700 text-xs rounded">
                           高风险
@@ -221,8 +244,21 @@ export function ApprovalCenter() {
             onOpenFlow={() => setFlowSupportOpen(true)}
           />
           <p className="text-xs text-gray-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-            当前处于 SOP「优化动作」阶段：对动作清单进行评审与放行。审批通过后进入结果输出与归档。
+            当前是经营上的「动作评审」环节：确认推荐打法是否放行。放行后请到「执行与结果」看落地进度，再到回放里对照指标；收尾时可沉淀复盘形成经验。
           </p>
+
+          {selectedTaskView ? (
+            <TaskFlowSidePanel
+              view={selectedTaskView}
+              actionId={selectedAction.id}
+              productId={selectedAction.productId}
+              onApprovalCta={(cta) => {
+                if (cta === 'submit_approval') handleApprove();
+                else if (cta === 'reject') handleReject();
+                else if (cta === 'defer') handleDefer();
+              }}
+            />
+          ) : null}
 
           {/* Header */}
           <div className="bg-white rounded-lg border border-gray-200 p-6">

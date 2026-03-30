@@ -8,15 +8,49 @@ import {
   AlertCircle,
   TrendingUp,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  Sparkles,
 } from 'lucide-react';
-import { executions, actions } from '../data/mockData';
+import type { Action } from '../data/mockData';
+import { executions, actions as mockActions } from '../data/mockData';
+import { actions as catalogActions } from '../data/liveCatalog';
+import { mapLegacyActionToPhase } from '../data/taskFlow';
+import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
+import { TaskFlowSidePanel } from '../components/taskFlow/TaskFlowSidePanel';
+import { TaskStateBadge } from '../components/taskFlow/TaskStateBadge';
 import { inferPhaseForContext } from '../data/sop/diagnosisFlowSkeleton';
 import { resolveKnowledgeSupport } from '../data/expertKnowledge';
 import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
 import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
+import { useReviewLedger } from '../contexts/ReviewLedgerContext';
+import { Button } from '../components/ui/button';
+
+function resolveActionForExecution(execution: (typeof executions)[0]): Action | undefined {
+  return (
+    catalogActions.find((a) => a.id === execution.actionId) ??
+    mockActions.find((a) => a.id === execution.actionId)
+  );
+}
+
+function syntheticActionFromExecution(execution: (typeof executions)[0]): Action {
+  return {
+    id: execution.actionId,
+    name: execution.actionName,
+    type: '执行实例',
+    productId: '',
+    productName: execution.productName,
+    strategyId: '',
+    status: execution.status,
+    riskLevel: 'medium',
+    reason: '',
+    expectedImpact: execution.expectedOutcome,
+    createdAt: execution.startTime,
+  };
+}
 
 export function ExecutionOutcome() {
+  const { openDeposition } = useReviewLedger();
+  const { getOverride } = useTaskFlowOverrides();
   const [flowSupportOpen, setFlowSupportOpen] = useState(false);
   const allExecutions = executions;
   const runningExecutions = executions.filter(e => e.status === 'running');
@@ -49,7 +83,9 @@ export function ExecutionOutcome() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">执行与结果</h1>
-        <p className="text-gray-600">跟踪动作执行状态和效果反馈</p>
+        <p className="text-gray-600">
+          结合审批结论看落地进度与效果；完成后可到回放对照指标，并用「沉淀复盘」形成经验。
+        </p>
       </div>
 
       <div className="mb-8 space-y-2">
@@ -58,7 +94,7 @@ export function ExecutionOutcome() {
           onOpenFlow={() => setFlowSupportOpen(true)}
         />
         <p className="text-xs text-gray-600">
-          当前贴近「结果输出 / 复盘跟踪」：执行侧请对照 Flow Support 中的执行提醒与风险检查项。
+          需要操作细则时，可打开右侧 Flow Support 查看执行提醒与风险检查（可选）。
         </p>
       </div>
 
@@ -127,32 +163,28 @@ export function ExecutionOutcome() {
 
       {/* Executions List */}
       <div className="space-y-4">
-        {allExecutions.map((execution) => (
+        {allExecutions.map((execution) => {
+          const boundAction = resolveActionForExecution(execution);
+          const actionRow = boundAction ?? syntheticActionFromExecution(execution);
+          const flowView = mapLegacyActionToPhase(actionRow, execution, getOverride(actionRow.id));
+          return (
           <div key={execution.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <div className="p-6">
               {/* Header */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <h3 className="text-lg font-semibold text-gray-900">{execution.actionName}</h3>
-                    {execution.status === 'running' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
-                        <Play className="w-3 h-3" />
-                        执行中
-                      </span>
-                    )}
-                    {execution.status === 'completed' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 text-xs rounded-full">
-                        <CheckCircle2 className="w-3 h-3" />
-                        已完成
-                      </span>
-                    )}
-                    {execution.status === 'failed' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-700 text-xs rounded-full">
-                        <XCircle className="w-3 h-3" />
-                        失败
-                      </span>
-                    )}
+                    {execution.status === 'running' ? (
+                      <Play className="w-4 h-4 text-blue-600 shrink-0" aria-hidden />
+                    ) : null}
+                    {execution.status === 'completed' ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" aria-hidden />
+                    ) : null}
+                    {execution.status === 'failed' ? (
+                      <XCircle className="w-4 h-4 text-red-600 shrink-0" aria-hidden />
+                    ) : null}
+                    <TaskStateBadge phase={flowView.phase} />
                   </div>
                   
                   <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -243,18 +275,24 @@ export function ExecutionOutcome() {
                 </div>
               </details>
 
+              <div className="mt-4">
+                <TaskFlowSidePanel
+                  view={flowView}
+                  actionId={actionRow.id}
+                  productId={actionRow.productId || undefined}
+                  compact
+                />
+              </div>
+
               {/* Actions */}
               <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-200">
                 {execution.status === 'running' && (
-                  <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button type="button" className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
                     暂停执行
                   </button>
                 )}
                 {execution.status === 'failed' && (
                   <>
-                    <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      重新执行
-                    </button>
                     <Link
                       to="/replay"
                       className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
@@ -265,21 +303,44 @@ export function ExecutionOutcome() {
                   </>
                 )}
                 {execution.status === 'completed' && (
-                  <Link
-                    to="/replay"
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                  >
-                    查看详细分析
-                    <ExternalLink className="w-4 h-4" />
-                  </Link>
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="gap-1.5 text-violet-900 bg-violet-50 hover:bg-violet-100 border border-violet-200"
+                      onClick={() =>
+                        openDeposition({
+                          source: 'execution_complete',
+                          objectLabel: `商品 · ${execution.productName}`,
+                          actionSummary: execution.actionName,
+                          outcomeSummary:
+                            execution.actualOutcome?.trim() ||
+                            execution.expectedOutcome ||
+                            '执行已结束，请结合日志与指标填写复盘要点。',
+                          defaultSuggest: true,
+                        })
+                      }
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      沉淀复盘
+                    </Button>
+                    <Link
+                      to="/replay"
+                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                    >
+                      查看详细分析
+                      <ExternalLink className="w-4 h-4" />
+                    </Link>
+                  </>
                 )}
-                <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                <button type="button" className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
                   下载日志
                 </button>
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Recent Completed Summary */}
@@ -287,15 +348,41 @@ export function ExecutionOutcome() {
         <h2 className="font-semibold text-gray-900 mb-4">最近完成动作效果摘要</h2>
         
         <div className="space-y-3">
-          {actions.filter(a => a.status === 'completed').map((action) => (
-            <div key={action.id} className="flex items-start justify-between p-4 bg-gray-50 rounded-lg">
-              <div className="flex-1">
+          {mockActions.filter(a => a.status === 'completed').map((action) => (
+            <div
+              key={action.id}
+              className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 p-4 bg-gray-50 rounded-lg"
+            >
+              <div className="flex-1 min-w-0">
                 <div className="font-medium text-gray-900 mb-1">{action.name}</div>
                 <div className="text-sm text-gray-600">{action.productName}</div>
               </div>
-              <div className="text-right">
-                <div className="text-sm text-green-600 mb-1">✓ 效果达到预期</div>
-                <div className="text-sm text-gray-600">{action.actualImpact}</div>
+              <div className="flex flex-col sm:items-end gap-2">
+                <div className="text-right">
+                  <div className="text-sm text-green-600 mb-1">✓ 效果达到预期</div>
+                  <div className="text-sm text-gray-600">{action.actualImpact}</div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 gap-1.5 border-violet-200 text-violet-900 hover:bg-violet-50"
+                  onClick={() =>
+                    openDeposition({
+                      source: 'execution_complete',
+                      objectLabel: `商品 · ${action.productName}`,
+                      actionSummary: action.name,
+                      outcomeSummary:
+                        action.actualImpact?.trim() ||
+                        action.expectedImpact ||
+                        '效果摘要如上，可补充经营侧解读。',
+                      defaultSuggest: true,
+                    })
+                  }
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  沉淀复盘
+                </Button>
               </div>
             </div>
           ))}

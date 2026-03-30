@@ -1,4 +1,7 @@
 import { Outlet, NavLink } from 'react-router';
+import { TaskFlowOverrideProvider } from '../contexts/TaskFlowOverrideContext';
+import { ReviewLedgerProvider } from '../contexts/ReviewLedgerContext';
+import { ReviewLearningStrip } from './review/ReviewLearningStrip';
 import { 
   LayoutDashboard, 
   Package, 
@@ -8,12 +11,14 @@ import {
   ChevronDown,
   Search,
   Calendar,
-  GitBranch
+  GitBranch,
+  Sunrise,
 } from 'lucide-react';
 
 export function Layout() {
   const navItems = [
-    { path: '/', label: '今日操盘台', icon: LayoutDashboard },
+    { path: '/', label: '经营搭档', icon: LayoutDashboard },
+    { path: '/today', label: '今日操盘台', icon: Sunrise },
     { path: '/products', label: '商品操盘台', icon: Package },
     { path: '/approvals', label: '动作审批中心', icon: CheckCircle },
     { path: '/execution', label: '执行与结果', icon: Activity },
@@ -21,6 +26,8 @@ export function Layout() {
   ];
 
   return (
+    <TaskFlowOverrideProvider>
+    <ReviewLedgerProvider>
     <div className="flex h-screen bg-gray-50">
       {/* Left Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
@@ -68,9 +75,9 @@ export function Layout() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg text-sm">
               <GitBranch className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-700">版本:</span>
+              <span className="text-gray-700">环境</span>
               <button className="flex items-center gap-1 text-gray-900 font-medium hover:text-blue-600">
-                v2.3.1
+                正式 v2.3.1
                 <ChevronDown className="w-4 h-4" />
               </button>
             </div>
@@ -102,10 +109,15 @@ export function Layout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto">
-          <Outlet />
+        <main className="flex-1 overflow-auto flex flex-col">
+          <ReviewLearningStrip />
+          <div className="flex-1 overflow-auto">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
+    </ReviewLedgerProvider>
+    </TaskFlowOverrideProvider>
   );
 }

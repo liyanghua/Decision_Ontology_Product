@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, Link, useNavigate } from 'react-router';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router';
 import { 
   ArrowLeft, 
   AlertCircle, 
@@ -15,7 +15,8 @@ import {
   ShieldAlert,
   Calendar,
   ChevronRight,
-  PlayCircle
+  PlayCircle,
+  Sparkles,
 } from 'lucide-react';
 import { products, adsFactCatalog, availableStatDatesByProductId, listProducts } from '../data/liveCatalog';
 import {
@@ -33,9 +34,30 @@ import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
 import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
 import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDrawer';
 import { StrategySupportTrigger } from '../components/knowledge/StrategySupportTrigger';
+import {
+  linesToDiagnosisCards,
+  linesToOpportunityCards,
+  improvementVmToActionCards,
+  strategyToDecisionCards,
+  causeToDiagnosisCards,
+  displayIssueToDiagnosisCards,
+  missingDataToRiskCards,
+} from '../data/decisionCards';
+import { DecisionCardFrame } from '../components/decisionCards/DecisionCardFrame';
+import { executions } from '../data/mockData';
+import { mapLegacyActionToPhase } from '../data/taskFlow';
+import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
+import { TaskFlowSidePanel } from '../components/taskFlow/TaskFlowSidePanel';
+import { TaskStateBadge } from '../components/taskFlow/TaskStateBadge';
+import { useReviewLedger } from '../contexts/ReviewLedgerContext';
+import { Button } from '../components/ui/button';
+import { appendFromHome } from '../data/operatorHome/operatorObjectSummary';
 
 export function ProductDiagnosisDetail() {
+  const { getOverride } = useTaskFlowOverrides();
+  const { openDeposition } = useReviewLedger();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { productId } = useParams();
   const statDates = productId ? (availableStatDatesByProductId[productId] ?? []) : [];
   const [selectedStatistDate, setSelectedStatistDate] = useState('');
@@ -48,6 +70,17 @@ export function ProductDiagnosisDetail() {
     const next = availableStatDatesByProductId[productId]?.[0] ?? '';
     setSelectedStatistDate(next);
   }, [productId]);
+
+  useEffect(() => {
+    if (searchParams.get('focus') !== 'actions') return;
+    const t = window.setTimeout(() => {
+      document.getElementById('operator-home-actions')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [searchParams, productId]);
 
   const diagnosisVm = useMemo(
     () =>
@@ -105,6 +138,76 @@ export function ProductDiagnosisDetail() {
     () => splitInsightBullets(structured?.analysis_thought, 4),
     [structured?.analysis_thought],
   );
+
+  const thoughtDecisionCards = useMemo(() => {
+    if (!productId || !product || thoughtBullets.length === 0) return [];
+    return linesToDiagnosisCards(productId, product.name, thoughtBullets, '分析思路', riskLevel);
+  }, [productId, product, thoughtBullets, riskLevel]);
+
+  const conclusionDecisionCards = useMemo(() => {
+    if (!productId || !product || conclusionCards.length === 0) return [];
+    return linesToDiagnosisCards(productId, product.name, conclusionCards, '核心结论', riskLevel);
+  }, [productId, product, conclusionCards, riskLevel]);
+
+  const problemDecisionCards = useMemo(() => {
+    if (!productId || !product || problemBullets.length === 0) return [];
+    return linesToDiagnosisCards(productId, product.name, problemBullets, '问题剖析', riskLevel);
+  }, [productId, product, problemBullets, riskLevel]);
+
+  const growthDecisionCards = useMemo(() => {
+    if (!productId || !product || growthBullets.length === 0) return [];
+    return linesToOpportunityCards(productId, product.name, growthBullets);
+  }, [productId, product, growthBullets]);
+
+  const improvementDecisionCards = useMemo(() => {
+    if (!productId || !product || improvementCards.length === 0) return [];
+    return improvementVmToActionCards(productId, product.name, improvementCards);
+  }, [productId, product, improvementCards]);
+
+  const missingDecisionCards = useMemo(() => {
+    if (!productId || !product || missingDataCards.length === 0) return [];
+    return missingDataToRiskCards(productId, product.name, missingDataCards);
+  }, [productId, product, missingDataCards]);
+
+  const issueStepCards = useMemo(() => {
+    if (!productId || !product) return [];
+    const items = problemBullets.length > 0 ? problemBullets : product.issues;
+    if (items.length === 0) return [];
+    return displayIssueToDiagnosisCards(productId, product.name, items);
+  }, [productId, product, problemBullets]);
+
+  const diagnosisReviewPrefill = useMemo(() => {
+    if (!product) return null;
+    const done = productActions.filter((a) => a.status === 'completed');
+    const actionSummary =
+      done.length > 0
+        ? done.map((a) => a.name).join('、')
+        : productActions.length > 0
+          ? '动作与策略见上文步骤'
+          : '本轮以诊断结论为主';
+    const outcomeSummary =
+      improvementCards[0]?.expectedMetric?.trim() ||
+      improvementCards[0]?.validationNote?.trim() ||
+      improvementCards[0]?.title?.trim() ||
+      (product.diagnosisBrief?.trim() ? product.diagnosisBrief.slice(0, 200) : '') ||
+      '请结合上文「预期效果」与指标，填写实际结果与体会。';
+    return {
+      objectLabel: `商品 · ${product.name}`,
+      actionSummary,
+      outcomeSummary,
+      defaultLesson: problemBullets[0] ?? growthBullets[0],
+    };
+  }, [product, productActions, improvementCards, problemBullets, growthBullets]);
+
+  const causeDecisionCards = useMemo(() => {
+    if (!productId || !product || causes.length === 0) return [];
+    return causeToDiagnosisCards(productId, product.name, causes);
+  }, [productId, product, causes]);
+
+  const strategyDecisionCards = useMemo(() => {
+    if (!productId || !product || strategyList.length === 0) return [];
+    return strategyToDecisionCards(productId, product.name, strategyList, causes);
+  }, [productId, product, strategyList, causes]);
 
   const pendingActionCount = useMemo(
     () => productActions.filter((a) => a.status === 'pending').length,
@@ -190,9 +293,6 @@ export function ProductDiagnosisDetail() {
     );
   }
 
-  const displayProblemItems =
-    problemBullets.length > 0 ? problemBullets : product.issues;
-
   const openRootCauseExplain = (rootCauseId: string) => {
     setSelectedRootCause(rootCauseId);
     setExplainDrawerOpen(true);
@@ -208,6 +308,12 @@ export function ProductDiagnosisDetail() {
             <ArrowLeft className="w-4 h-4" />
             返回操盘台
           </Link>
+
+          {searchParams.get('from') === 'home' ? (
+            <p className="text-xs text-blue-800 bg-blue-50/90 border border-blue-100 rounded-md px-2.5 py-2 mb-3 leading-relaxed">
+              从经营搭档进入 · 当前商品的诊断与动作均与操盘队列一致
+            </p>
+          ) : null}
 
           <div className="mb-4">
             <label className="text-xs font-medium text-gray-600 block mb-1">切换商品 goods_id</label>
@@ -384,9 +490,9 @@ export function ProductDiagnosisDetail() {
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex gap-3 text-sm text-amber-950">
               <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-600" />
               <div>
-                <div className="font-medium mb-1">数据字段缺失提示</div>
+                <div className="font-medium mb-1">部分指标未返回</div>
                 <p className="text-amber-900/90 text-xs leading-relaxed">
-                  以下指标在本行 CSV 中未返回，详情区已用「—」占位，请关注数据采集链路：
+                  当前演示数据快照里下列字段为空，详情区已用「—」占位，不影响演示主线：
                   {missingFieldLabels.join('、')}
                 </p>
               </div>
@@ -397,15 +503,40 @@ export function ProductDiagnosisDetail() {
             stageKey={currentSopPhase}
             onOpenFlow={() => setFlowSupportOpen(true)}
           />
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50/90 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-slate-700">
+              <span className="font-medium text-slate-900">演示主线 · 下一步</span>
+              <span className="hidden sm:inline"> — </span>
+              <span className="block sm:inline mt-1 sm:mt-0">去审批放行 → 看执行进度 → 对照指标看结果。</span>
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <Button
+                asChild
+                size="sm"
+                variant={pendingActionCount > 0 ? 'default' : 'outline'}
+                className={pendingActionCount > 0 ? '' : 'text-slate-700'}
+              >
+                <Link to={appendFromHome('/approvals')}>去审批</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link to="/execution">看执行</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/replay?goodsId=${encodeURIComponent(product.id)}`}>看结果</Link>
+              </Button>
+            </div>
+          </div>
+
           {pendingActionCount > 0 && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-              存在待审批动作，请前往「动作审批」完成优化动作阶段评审。
+              有待经营决策的动作，建议先在「动作审批」放行或调整，再到执行页看落地。
             </p>
           )}
 
           {/* Core Metrics — 来自 rawRow（10 项） */}
           <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">核心经营指标（真实字段）</h3>
+            <h3 className="font-semibold text-gray-900 mb-4">核心经营指标（当前快照）</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {metricCells.map((cell) => (
                 <div
@@ -427,121 +558,86 @@ export function ProductDiagnosisDetail() {
           </div>
 
           {structured && (
-            <div className="space-y-4">
-              {thoughtBullets.length > 0 && (
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="font-semibold text-gray-900 mb-3">分析思路</h3>
-                  <ul className="space-y-2">
-                    {thoughtBullets.map((line, i) => (
-                      <li key={i} className="text-sm text-gray-700 pl-3 border-l-2 border-gray-200">
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
+            <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
+              <div>
+                <h3 className="font-semibold text-gray-900">结构化诊断 · 决策卡</h3>
+                <p className="text-xs text-gray-500 mt-1 max-w-3xl">
+                  统一为可经营决策对象：状态、动因与推荐动作；弱化长段原文罗列。
+                </p>
+              </div>
+              {thoughtDecisionCards.length === 0 &&
+              conclusionDecisionCards.length === 0 &&
+              problemDecisionCards.length === 0 &&
+              growthDecisionCards.length === 0 &&
+              improvementDecisionCards.length === 0 &&
+              missingDecisionCards.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  暂无结构化决策卡（等待诊断文本或切换统计日）。
+                </p>
+              ) : (
+                <div className="space-y-6">
+                  {thoughtDecisionCards.length > 0 ? (
+                    <section>
+                      <h4 className="text-sm font-medium text-gray-800 mb-2">分析思路</h4>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {thoughtDecisionCards.map((c) => (
+                          <DecisionCardFrame key={c.card_id} card={c} to={c.href} variant="compact" />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {conclusionDecisionCards.length > 0 ? (
+                    <section>
+                      <h4 className="text-sm font-medium text-gray-800 mb-2">核心结论</h4>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {conclusionDecisionCards.map((c) => (
+                          <DecisionCardFrame key={c.card_id} card={c} to={c.href} variant="compact" />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {problemDecisionCards.length > 0 ? (
+                    <section>
+                      <h4 className="text-sm font-medium text-gray-800 mb-2">问题剖析</h4>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {problemDecisionCards.map((c) => (
+                          <DecisionCardFrame key={c.card_id} card={c} to={c.href} variant="compact" />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {growthDecisionCards.length > 0 ? (
+                    <section>
+                      <h4 className="text-sm font-medium text-gray-800 mb-2">增长机会</h4>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {growthDecisionCards.map((c) => (
+                          <DecisionCardFrame key={c.card_id} card={c} to={c.href} variant="compact" />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {improvementDecisionCards.length > 0 ? (
+                    <section>
+                      <h4 className="text-sm font-medium text-gray-800 mb-2">改进动作</h4>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {improvementDecisionCards.map((c) => (
+                          <DecisionCardFrame key={c.card_id} card={c} to={c.href} variant="compact" />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {missingDecisionCards.length > 0 ? (
+                    <section>
+                      <h4 className="text-sm font-medium text-gray-800 mb-2">数据完整性风险</h4>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {missingDecisionCards.map((c) => (
+                          <DecisionCardFrame key={c.card_id} card={c} to={c.href} variant="compact" />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                 </div>
               )}
-
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-3">核心结论</h3>
-                {conclusionCards.length > 0 ? (
-                  <div className="space-y-2">
-                    {conclusionCards.map((line, i) => (
-                      <div
-                        key={i}
-                        className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-sm text-gray-900"
-                      >
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">暂无核心结论</p>
-                )}
-              </div>
-
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-3">问题剖析</h3>
-                {problemBullets.length > 0 ? (
-                  <ul className="space-y-2">
-                    {problemBullets.map((line, i) => (
-                      <li
-                        key={i}
-                        className="text-sm text-gray-800 rounded-lg border border-red-100 bg-red-50/50 px-3 py-2"
-                      >
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-gray-500">暂无问题剖析</p>
-                )}
-              </div>
-
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-3">增长分析</h3>
-                {growthBullets.length > 0 ? (
-                  <ul className="space-y-2">
-                    {growthBullets.map((line, i) => (
-                      <li
-                        key={i}
-                        className="text-sm text-gray-800 rounded-lg border border-green-100 bg-green-50/50 px-3 py-2"
-                      >
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-gray-500">暂无增长分析</p>
-                )}
-              </div>
-
-              <div className="bg-white rounded-lg border border-amber-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-3">改进建议（可执行动作卡）</h3>
-                {improvementCards.length > 0 ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {improvementCards.map((card, i) => (
-                      <div
-                        key={i}
-                        className="rounded-lg border border-amber-100 bg-amber-50/40 p-4 flex flex-col gap-2 text-sm"
-                      >
-                        <div className="font-semibold text-amber-950">{card.title || `动作 ${i + 1}`}</div>
-                        <div>
-                          <div className="text-[10px] uppercase tracking-wide text-gray-500">预期指标 / 路径</div>
-                          <div className="text-gray-800">{card.expectedMetric || '—'}</div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] uppercase tracking-wide text-gray-500">目标提升</div>
-                          <div className="text-amber-900 font-medium">{card.targetLift || '—'}</div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] uppercase tracking-wide text-gray-500">验收说明</div>
-                          <div className="text-gray-700">{card.validationNote || '—'}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">暂无改进建议</p>
-                )}
-              </div>
-
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-3">数据缺失与影响</h3>
-                {missingDataCards.length > 0 ? (
-                  <div className="space-y-2">
-                    {missingDataCards.map((line, i) => (
-                      <div
-                        key={i}
-                        className="rounded-lg border border-purple-100 bg-purple-50/40 px-3 py-2 text-sm text-gray-800"
-                      >
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">暂无缺失说明</p>
-                )}
-              </div>
             </div>
           )}
 
@@ -625,16 +721,16 @@ export function ProductDiagnosisDetail() {
             </div>
             
             <div className="p-6">
-              <ul className="space-y-3">
-                {displayProblemItems.map((issue, idx) => (
-                  <li key={idx} className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-semibold text-red-700">{idx + 1}</span>
-                    </div>
-                    <span className="font-medium text-red-900">{issue}</span>
-                  </li>
-                ))}
-              </ul>
+              <p className="text-xs text-gray-500 mb-3">以下为与证据包对齐的「当前问题」决策卡。</p>
+              {issueStepCards.length === 0 ? (
+                <p className="text-sm text-gray-500">暂无问题项。</p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {issueStepCards.map((c) => (
+                    <DecisionCardFrame key={c.card_id} card={c} to={c.href} variant="compact" />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -653,58 +749,18 @@ export function ProductDiagnosisDetail() {
             </div>
             
             <div className="p-6 space-y-3">
-              {causes.map((cause, index) => (
-                <button
-                  key={cause.id}
-                  onClick={() => openRootCauseExplain(cause.id)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg p-4 hover:border-orange-300 hover:bg-orange-50 transition-colors text-left"
-                >
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-semibold text-sm ${
-                      index === 0 ? 'bg-red-100 text-red-700' :
-                      index === 1 ? 'bg-orange-100 text-orange-700' :
-                      'bg-gray-200 text-gray-700'
-                    }`}>
-                      {index + 1}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="font-medium text-gray-900">{cause.name}</div>
-                        <Info className="w-4 h-4 text-gray-400" />
-                      </div>
-                      <div className="text-sm text-gray-600 mb-3">{cause.description}</div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                            <span>置信度</span>
-                            <span className="font-medium text-gray-900">{(cause.confidence * 100).toFixed(0)}%</span>
-                          </div>
-                          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-blue-600 rounded-full"
-                              style={{ width: `${cause.confidence * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                            <span>影响度</span>
-                            <span className="font-medium text-gray-900">{(cause.impact * 100).toFixed(0)}%</span>
-                          </div>
-                          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-orange-600 rounded-full"
-                              style={{ width: `${cause.impact * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ))}
+              <p className="text-xs text-gray-500 mb-1">根因以决策卡呈现；点击卡片打开解释侧栏。</p>
+              {causeDecisionCards.length === 0 ? (
+                <p className="text-sm text-gray-500">暂无根因。</p>
+              ) : (
+                causeDecisionCards.map((c, i) => (
+                  <DecisionCardFrame
+                    key={c.card_id}
+                    card={c}
+                    onActivate={() => openRootCauseExplain(causes[i].id)}
+                  />
+                ))
+              )}
             </div>
           </div>
 
@@ -723,60 +779,36 @@ export function ProductDiagnosisDetail() {
             </div>
             
             <div className="p-6 space-y-3">
-              {strategyList.map((strategy, index) => (
-                <div key={strategy.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-semibold text-green-700">{index + 1}</span>
-                        </div>
-                        <div className="font-medium text-gray-900">{strategy.name}</div>
-                        <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">
-                          优先级 {strategy.priority}
-                        </span>
-                      </div>
-                      
-                      <div className="text-sm text-green-600 bg-green-50 border border-green-200 rounded px-3 py-2 mb-3">
-                        <span className="font-medium">预期影响: </span>
-                        {strategy.expectedImpact}
-                      </div>
-
-                      <div className="text-sm text-gray-600 mb-3">
-                        <span className="font-medium">针对根因: </span>
-                        {strategy.targetRootCause.map(rc => 
-                          causes.find(c => c.id === rc)?.name
-                        ).join(', ')}
-                      </div>
-                    </div>
-                    
-                    <button
-                      onClick={() => setStrategySupportOpen(true)}
-                      className="px-3 py-2 border border-purple-300 text-purple-700 text-sm rounded-lg hover:bg-purple-50 flex items-center gap-2"
-                    >
-                      <BookOpen className="w-4 h-4" />
-                      知识支持
-                    </button>
-                  </div>
-
-                  <div className="border-t border-gray-200 pt-3">
-                    <div className="text-sm font-medium text-gray-700 mb-2">包含动作:</div>
-                    <ul className="space-y-1">
-                      {strategy.actions.map((action, idx) => (
-                        <li key={idx} className="flex items-center gap-2 text-sm text-gray-600">
-                          <CheckCircle2 className="w-4 h-4 text-gray-400" />
-                          {action}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-gray-500">
+                  策略决策卡归纳预期影响与动作抓手，可跳转动作区拆解审批。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStrategySupportOpen(true)}
+                  className="px-3 py-2 border border-purple-300 text-purple-700 text-sm rounded-lg hover:bg-purple-50 flex items-center gap-2 shrink-0"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  策略知识
+                </button>
+              </div>
+              {strategyDecisionCards.length === 0 ? (
+                <p className="text-sm text-gray-500">暂无策略。</p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {strategyDecisionCards.map((c) => (
+                    <DecisionCardFrame key={c.card_id} card={c} to={c.href} variant="compact" />
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
           {/* Step 5: Action Plan */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div
+            id="operator-home-actions"
+            className="bg-white rounded-lg border border-gray-200 overflow-hidden scroll-mt-4"
+          >
             <div className="px-6 py-4 bg-blue-50 border-b border-blue-200">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
@@ -797,27 +829,26 @@ export function ProductDiagnosisDetail() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {productActions.map((action) => (
+                  {productActions.map((action) => {
+                    const exec =
+                      executions.find((e) => e.actionId === action.id) ?? null;
+                    const flowView = mapLegacyActionToPhase(
+                      action,
+                      exec,
+                      getOverride(action.id),
+                    );
+                    return (
                     <div key={action.id} className={`rounded-lg p-4 border ${
                       action.status === 'pending' ? 'bg-orange-50 border-orange-200' :
                       action.status === 'approved' ? 'bg-green-50 border-green-200' :
                       action.status === 'running' ? 'bg-blue-50 border-blue-200' :
                       'bg-gray-50 border-gray-200'
                     }`}>
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-start justify-between mb-2 gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
                             <div className="font-medium text-gray-900">{action.name}</div>
-                            {action.status === 'pending' && (
-                              <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
-                                待审批
-                              </span>
-                            )}
-                            {action.status === 'approved' && (
-                              <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
-                                已批准
-                              </span>
-                            )}
+                            <TaskStateBadge phase={flowView.phase} />
                           </div>
                           <div className="text-sm text-gray-600 mb-2">{action.type} · {action.reason}</div>
                           <div className="text-sm text-green-600 bg-white rounded px-3 py-2">
@@ -825,8 +856,16 @@ export function ProductDiagnosisDetail() {
                           </div>
                         </div>
                       </div>
+                      <TaskFlowSidePanel
+                        view={flowView}
+                        actionId={action.id}
+                        productId={productId}
+                        compact
+                        className="mt-3 !shadow-none"
+                      />
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -864,6 +903,41 @@ export function ProductDiagnosisDetail() {
               )}
             </div>
           </div>
+
+          {diagnosisReviewPrefill ? (
+            <div className="bg-white rounded-lg border border-violet-200 overflow-hidden shadow-sm">
+              <div className="px-6 py-4 bg-violet-50/90 border-b border-violet-200">
+                <div className="flex items-center gap-3">
+                  <Sparkles className="w-5 h-5 text-violet-700" />
+                  <div>
+                    <h3 className="font-semibold text-violet-950">复盘沉淀</h3>
+                    <p className="text-sm text-violet-900/90 mt-0.5">
+                      诊断与动作告一段落后，把结论留给下一次决策参考
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <p className="text-sm text-gray-600 leading-relaxed flex-1">
+                  无需编辑资产明细。此处只记下你的复盘要点；若勾选「参考经验」，将进入候选池并排队轻量核对。
+                </p>
+                <Button
+                  type="button"
+                  className="shrink-0 gap-2 bg-violet-700 hover:bg-violet-800"
+                  onClick={() =>
+                    openDeposition({
+                      source: 'diagnosis_complete',
+                      ...diagnosisReviewPrefill,
+                      defaultSuggest: true,
+                    })
+                  }
+                >
+                  <Sparkles className="w-4 h-4" />
+                  记入复盘
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 

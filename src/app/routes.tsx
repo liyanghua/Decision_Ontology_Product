@@ -1,5 +1,6 @@
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/Layout";
+import { OperatorHome } from "./pages/OperatorHome";
 import { TodayCommand } from "./pages/TodayCommand";
 import { ProductActionBoard } from "./pages/ProductActionBoard";
 import { ProductDiagnosisDetail } from "./pages/ProductDiagnosisDetail";
@@ -12,7 +13,8 @@ export const router = createBrowserRouter([
     path: "/",
     Component: Layout,
     children: [
-      { index: true, Component: TodayCommand },
+      { index: true, Component: OperatorHome },
+      { path: "today", Component: TodayCommand },
       { path: "products", Component: ProductActionBoard },
       { path: "products/:productId", Component: ProductDiagnosisDetail },
       { path: "approvals", Component: ApprovalCenter },

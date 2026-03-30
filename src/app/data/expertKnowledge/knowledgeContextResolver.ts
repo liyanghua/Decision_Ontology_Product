@@ -25,6 +25,7 @@ function effectiveStage(input: KnowledgeContextInput): DiagnosisPhaseId {
       return 'review';
     case 'today_command':
     case 'product_action_board':
+    case 'operator_home':
       return 'prepare';
     case 'replay_explain':
     case 'product_detail':
@@ -94,6 +95,20 @@ export function resolveKnowledgeSupport(
           themeKey: input.themeKey,
         }),
       );
+      break;
+    }
+    case 'operator_home': {
+      if (input.goodsId) groups.push(getStrategySupportByGoodsId(input.goodsId));
+      const cat = input.category?.trim();
+      if (cat) groups.push(getStrategySupportByCategory(cat));
+      const sig = input.signalType ?? 'neutral';
+      groups.push(
+        getStrategySupportByTodayContext({
+          signalType: sig,
+          themeKey: input.themeKey,
+        }),
+      );
+      if (input.riskKey) groups.push(getStrategySupportByRiskKey(input.riskKey));
       break;
     }
     case 'execution': {

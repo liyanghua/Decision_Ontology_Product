@@ -149,6 +149,15 @@ export function ReplayExplain() {
     syncUrl(goodsId, statistDate, compareDate);
   }, [goodsId, statistDate, compareDate, syncUrl]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash !== '#review-learning-path') return;
+    const t = window.setTimeout(() => {
+      document.getElementById('review-learning-path')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [goodsId, statistDate]);
+
   const run = baseObject?.run;
   const structured = run?.structured;
 
@@ -218,7 +227,7 @@ export function ReplayExplain() {
 
   if (!products.length) {
     return (
-      <div className="p-8 text-gray-600">暂无商品数据，请检查 CSV 是否加载成功。</div>
+      <div className="p-8 text-gray-600">暂无商品数据，请先加载演示队列（商品操盘台）。</div>
     );
   }
 
@@ -229,8 +238,39 @@ export function ReplayExplain() {
         <div>
           <p className="font-medium text-amber-950">历史诊断回放（Replay）</p>
           <p className="text-sm text-amber-900/90 mt-1">
-            本页展示来自离线表快照的模型输出与解析结果，仅供审计与解释；并非人工编辑页，也不代表实时线上结论。
+            本页用于「看结果」：对照不同统计日的诊断结论与解析要点，便于汇报与复盘；展示的是加载的数据快照，不等同于实时线上结论。
           </p>
+        </div>
+      </div>
+
+      <p className="text-sm text-slate-700 mb-4 leading-relaxed">
+        适合在审批、执行之后演示：用同一商品切换日期，讲清「落地前后盘面怎么说」；无需理解底层表结构。
+      </p>
+
+      <div
+        id="review-learning-path"
+        className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-4 mb-6"
+      >
+        <p className="text-sm font-semibold text-slate-900 mb-3">从操盘动作到复盘沉淀（示意）</p>
+        <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+          完整环境中由服务与核对流程驱动；此处为前台闭环示意，便于理解「处理结果被记住，并可能反哺后续决策」。
+        </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+          <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium">前台处理</span>
+          <span className="text-slate-400" aria-hidden>
+            →
+          </span>
+          <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium">复盘记录</span>
+          <span className="text-slate-400" aria-hidden>
+            →
+          </span>
+          <span className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 font-medium text-violet-900">
+            候选经验
+          </span>
+          <span className="text-slate-400" aria-hidden>
+            →
+          </span>
+          <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium">轻量核对</span>
         </div>
       </div>
 

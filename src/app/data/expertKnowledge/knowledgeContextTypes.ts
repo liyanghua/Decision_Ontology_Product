@@ -8,7 +8,8 @@ export type KnowledgePageId =
   | 'replay_explain'
   | 'today_command'
   | 'product_action_board'
-  | 'execution';
+  | 'execution'
+  | 'operator_home';
 
 export type TodaySignalType = 'opportunity' | 'risk' | 'critical' | 'neutral';
 

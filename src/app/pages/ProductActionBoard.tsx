@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { 
   AlertCircle, 
   AlertTriangle, 
@@ -16,7 +16,14 @@ import {
   Info,
   Activity
 } from 'lucide-react';
-import { products, evidencePacks, rootCauses, strategies, actions } from '../data/liveCatalog';
+import {
+  products,
+  evidencePacks,
+  rootCauses,
+  strategies,
+  actions,
+  highValueLeads,
+} from '../data/liveCatalog';
 import { inferProblemKeyFromText, resolveKnowledgeSupport } from '../data/expertKnowledge';
 import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDrawer';
 import { StrategySupportTrigger } from '../components/knowledge/StrategySupportTrigger';
@@ -29,9 +36,53 @@ function priorityLevelClass(level: string | undefined): string {
 
 export function ProductActionBoard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [selectedProductId, setSelectedProductId] = useState(products[0]?.id ?? '');
   const [strategySupportOpen, setStrategySupportOpen] = useState(false);
   const selectedProduct = products.find((p) => p.id === selectedProductId);
+
+  useEffect(() => {
+    if (!products.length) return;
+    const q = searchParams.get('q')?.trim();
+    const risk = searchParams.get('risk');
+    const sort = searchParams.get('sort');
+    const focus = searchParams.get('focus');
+
+    if (focus === 'opportunity') {
+      const opp = highValueLeads.find((l) => l.type === 'opportunity');
+      const pid = opp?.productIds[0];
+      if (pid && products.some((p) => p.id === pid)) {
+        setSelectedProductId(pid);
+        return;
+      }
+    }
+    if (risk === 'high') {
+      const hi = [...products]
+        .filter((p) => p.riskLevel === 'high')
+        .sort((a, b) => b.priority - a.priority)[0];
+      if (hi) {
+        setSelectedProductId(hi.id);
+        return;
+      }
+    }
+    if (sort === 'priority') {
+      const top = [...products].sort((a, b) => b.priority - a.priority)[0];
+      if (top) {
+        setSelectedProductId(top.id);
+        return;
+      }
+    }
+    if (!q) return;
+    const lower = q.toLowerCase();
+    const match =
+      products.find((p) => p.id === q || p.id.toLowerCase().includes(lower)) ||
+      products.find(
+        (p) =>
+          p.name.toLowerCase().includes(lower) ||
+          (p.sku && p.sku.toLowerCase().includes(lower)),
+      );
+    if (match) setSelectedProductId(match.id);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!products.length) return;

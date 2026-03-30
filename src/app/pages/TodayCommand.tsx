@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { 
   AlertCircle, 
   TrendingUp, 
@@ -20,7 +20,23 @@ import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDr
 import { StrategySupportTrigger } from '../components/knowledge/StrategySupportTrigger';
 
 export function TodayCommand() {
+  const [searchParams] = useSearchParams();
   const [strategySupportOpen, setStrategySupportOpen] = useState(false);
+
+  useEffect(() => {
+    const focus = searchParams.get('focus');
+    const id =
+      focus === 'opportunity'
+        ? 'operator-today-opportunities'
+        : focus === 'signals'
+          ? 'operator-today-signals'
+          : null;
+    if (!id) return;
+    const t = window.setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [searchParams]);
   const highRiskProducts = [...products]
     .filter((p) => p.riskLevel === 'high')
     .sort((a, b) => b.priority - a.priority);
@@ -178,7 +194,7 @@ export function TodayCommand() {
         {/* Left + Center: High Value Leads */}
         <div className="col-span-8 space-y-6">
           {/* Opportunities */}
-          <div className="bg-white rounded-lg border border-gray-200">
+          <div id="operator-today-opportunities" className="bg-white rounded-lg border border-gray-200 scroll-mt-4">
             <div className="px-6 py-4 border-b border-gray-200 bg-green-50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -443,7 +459,7 @@ export function TodayCommand() {
           </div>
 
           {/* Critical Signals */}
-          <div className="bg-white rounded-lg border-2 border-red-200">
+          <div id="operator-today-signals" className="bg-white rounded-lg border-2 border-red-200 scroll-mt-4">
             <div className="px-6 py-4 border-b border-red-200 bg-red-50">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
