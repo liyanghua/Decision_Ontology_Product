@@ -4,19 +4,7 @@ import type {
   SuggestedActionVM,
   TodaySpotlightItem,
 } from '../operatorHome/operatorHomeData';
-import { actions as catalogActions } from '../liveCatalog';
-import { executions } from '../mockData';
-import { mapLegacyActionToPhase, OPERATOR_TASK_PRESENTATION } from '../taskFlow';
 import type { DecisionCard, DecisionPriority } from './decisionCardTypes';
-
-function taskFlowLabelForActionId(actionId?: string): string | undefined {
-  if (!actionId) return undefined;
-  const action = catalogActions.find((a) => a.id === actionId);
-  if (!action) return undefined;
-  const exec = executions.find((e) => e.actionId === actionId) ?? null;
-  const { phase } = mapLegacyActionToPhase(action, exec, null);
-  return OPERATOR_TASK_PRESENTATION[phase].labelZh;
-}
 
 function priorityFromUrgency(u?: 'high' | 'medium' | 'low'): DecisionPriority {
   if (u === 'high') return 'P1';
@@ -60,8 +48,10 @@ export function opportunityRiskVmToDecisionCard(vm: OpportunityRiskCardVM): Deci
 }
 
 export function inProgressVmToDecisionCard(vm: InProgressTaskVM): DecisionCard {
-  const isDone = vm.status === 'completed';
-  const isPending = vm.status === 'pending_confirm';
+  const isDone = vm.task.status === 'completed';
+  const isPending = vm.task.status === 'pending_decision';
+  const isPrestage =
+    vm.task.status === 'waiting_input' || vm.task.status === 'diagnosing';
   return {
     card_id: `home-task-${vm.id}`,
     card_type: isDone ? 'ReviewCard' : 'ActionCard',
@@ -69,21 +59,25 @@ export function inProgressVmToDecisionCard(vm: InProgressTaskVM): DecisionCard {
     object_type: vm.primaryObject.object_type,
     title: vm.title,
     summary: vm.context,
-    why_now: isPending
-      ? '待审批动作卡住闭环，需尽快确认或驳回以免队列积压。'
-      : isDone
-        ? '已完成动作可进行结果核对与下一周期排期。'
-        : '执行中任务需对齐指标窗口与资源投入。',
-    current_status: taskFlowLabelForActionId(vm.actionId) ?? vm.statusLabel,
+    why_now: isPrestage
+      ? '前置准备没收口，后面的拍板和执行都会被拖慢，建议先把这一步补齐。'
+      : isPending
+        ? '待审批动作卡住闭环，需尽快确认或驳回以免队列积压。'
+        : isDone
+          ? '已完成动作可进行结果核对与下一周期排期。'
+          : '执行中任务需对齐指标窗口与资源投入。',
+    current_status: vm.task.statusLabel,
     risk_level: vm.primaryObject.risk_level,
-    priority: isPending ? 'P1' : isDone ? 'P3' : 'P2',
+    priority: isPrestage || isPending ? 'P1' : isDone ? 'P3' : 'P2',
     recommended_action:
       vm.primaryObject.next_action?.trim() && vm.primaryObject.next_action !== vm.title
         ? vm.primaryObject.next_action
-        : isPending
-          ? '去审批：确认或调整后推进落地'
-          : `去推进：${vm.title}`,
-    owner: '李明',
+        : isPrestage
+          ? `去推进：${vm.title}`
+          : isPending
+            ? '去审批：确认或调整后推进落地'
+            : `去推进：${vm.title}`,
+    owner: vm.task.ownerLabel,
     linked_memory: vm.primaryObject.current_goal ? [vm.primaryObject.current_goal] : undefined,
     linked_asset: vm.productId,
     href: vm.hrefPrimary,
@@ -103,14 +97,14 @@ export function suggestedVmToDecisionCard(vm: SuggestedActionVM): DecisionCard {
         : vm.detail
       : '系统生成的待审优化动作。',
     why_now: '建议动作与当前诊断结论绑定，早审早落地有利于抓住指标窗口。',
-    current_status: taskFlowLabelForActionId(vm.actionId) ?? '待审批',
+    current_status: vm.task.statusLabel,
     risk_level: vm.primaryObject.risk_level,
     priority: priorityFromHint(vm.priorityHint),
     recommended_action:
       vm.primaryObject.next_action?.trim() && vm.primaryObject.next_action !== vm.title
         ? vm.primaryObject.next_action
         : '看诊断里的打法，再去审批推进',
-    owner: '李明',
+    owner: vm.task.ownerLabel,
     linked_memory: vm.primaryObject.current_goal ? [vm.primaryObject.current_goal] : undefined,
     linked_asset: vm.productId,
     href: vm.processHref,

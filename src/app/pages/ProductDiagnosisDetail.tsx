@@ -28,6 +28,7 @@ import {
 } from '../data/adapters/detailViewMetrics';
 import { parseImprovementActionCards } from '../data/adapters/improvementActionParse';
 import { splitInsightBullets, splitHighlightCards } from '../data/adapters/diagnosisContentParse';
+import { buildReviewPrefillFromTask } from '../data/reviewLedgerData';
 import { inferPhaseForContext } from '../data/sop/diagnosisFlowSkeleton';
 import { inferProblemKeyFromText, resolveKnowledgeSupport } from '../data/expertKnowledge';
 import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
@@ -45,8 +46,9 @@ import {
 } from '../data/decisionCards';
 import { DecisionCardFrame } from '../components/decisionCards/DecisionCardFrame';
 import { executions } from '../data/mockData';
-import { mapLegacyActionToPhase } from '../data/taskFlow';
+import { listOperatorTaskRows, mapLegacyActionToPhase } from '../data/taskFlow';
 import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
+import { TaskActionDrawer } from '../components/taskFlow/TaskActionDrawer';
 import { TaskFlowSidePanel } from '../components/taskFlow/TaskFlowSidePanel';
 import { TaskStateBadge } from '../components/taskFlow/TaskStateBadge';
 import { useReviewLedger } from '../contexts/ReviewLedgerContext';
@@ -55,12 +57,13 @@ import { appendFromHome } from '../data/operatorHome/operatorObjectSummary';
 
 export function ProductDiagnosisDetail() {
   const { getOverride } = useTaskFlowOverrides();
-  const { openDeposition } = useReviewLedger();
+  const { openDeposition, getLatestReview, getReviewStatus } = useReviewLedger();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { productId } = useParams();
   const statDates = productId ? (availableStatDatesByProductId[productId] ?? []) : [];
   const [selectedStatistDate, setSelectedStatistDate] = useState('');
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!productId) {
@@ -95,6 +98,43 @@ export function ProductDiagnosisDetail() {
   const causes = diagnosisVm?.rootCauses ?? [];
   const strategyList = diagnosisVm?.strategies ?? [];
   const productActions = diagnosisVm?.actions ?? [];
+  const productActionRows = useMemo(
+    () => {
+      const baseRows = productActions.map((action) => {
+        const execution = executions.find((item) => item.actionId === action.id) ?? null;
+        const task = mapLegacyActionToPhase(action, execution, getOverride(action.id)).task;
+        return { action, execution, task };
+      });
+      const prestageRows = listOperatorTaskRows(getOverride)
+        .filter(
+          (row) => row.sourceKind === 'prestage_seed' && row.action.productId === productId,
+        )
+        .map((row) => ({
+          action: row.action,
+          execution: row.execution,
+          task: row.task,
+        }));
+
+      return [...prestageRows, ...baseRows].sort((a, b) =>
+        a.task.updatedAt < b.task.updatedAt ? 1 : a.task.updatedAt > b.task.updatedAt ? -1 : 0,
+      );
+    },
+    [getOverride, productActions, productId],
+  );
+  const completedProductActionRows = useMemo(
+    () => productActionRows.filter((row) => row.task.status === 'completed'),
+    [productActionRows],
+  );
+  const selectedTask = useMemo(() => {
+    if (!selectedActionId) return null;
+    const row = productActionRows.find((item) => item.action.id === selectedActionId);
+    if (!row) return null;
+    return {
+      task: row.task,
+      actionId: row.action.id,
+      productId,
+    };
+  }, [productActionRows, productId, selectedActionId]);
   const structured = diagnosisVm?.structured;
 
   const productOptions = useMemo(() => listProducts(), []);
@@ -178,26 +218,72 @@ export function ProductDiagnosisDetail() {
 
   const diagnosisReviewPrefill = useMemo(() => {
     if (!product) return null;
-    const done = productActions.filter((a) => a.status === 'completed');
+    const latestCompletedTask = completedProductActionRows[0]?.task;
+    const done = completedProductActionRows.map((row) => row.action);
     const actionSummary =
       done.length > 0
         ? done.map((a) => a.name).join('、')
         : productActions.length > 0
           ? '动作与策略见上文步骤'
           : '本轮以诊断结论为主';
-    const outcomeSummary =
+    const actualResult =
       improvementCards[0]?.expectedMetric?.trim() ||
       improvementCards[0]?.validationNote?.trim() ||
       improvementCards[0]?.title?.trim() ||
       (product.diagnosisBrief?.trim() ? product.diagnosisBrief.slice(0, 200) : '') ||
       '请结合上文「预期效果」与指标，填写实际结果与体会。';
+    if (latestCompletedTask) {
+      return buildReviewPrefillFromTask(latestCompletedTask, {
+        source: 'diagnosis_complete',
+        objectLabel: `商品 · ${product.name}`,
+        originalProblem: problemBullets[0] ?? product.issues?.[0] ?? product.diagnosisBrief,
+        actionSummary,
+        actualResult,
+        defaultLesson: problemBullets[0] ?? growthBullets[0],
+      });
+    }
     return {
+      source: 'diagnosis_complete' as const,
       objectLabel: `商品 · ${product.name}`,
+      originalProblem: problemBullets[0] ?? product.issues?.[0] ?? product.diagnosisBrief,
       actionSummary,
-      outcomeSummary,
+      actualResult,
       defaultLesson: problemBullets[0] ?? growthBullets[0],
+      taskRefs: { productId: product.id },
     };
-  }, [product, productActions, improvementCards, problemBullets, growthBullets]);
+  }, [completedProductActionRows, growthBullets, improvementCards, problemBullets, product, productActions]);
+  const diagnosisReviewStatus = useMemo(
+    () =>
+      product
+        ? getReviewStatus(
+            completedProductActionRows[0]
+              ? {
+                  actionId: completedProductActionRows[0].action.id,
+                  executionId: completedProductActionRows[0].task.sourceRefs.executionId,
+                  productId: product.id,
+                  taskId: completedProductActionRows[0].task.id,
+                }
+              : { productId: product.id },
+          )
+        : 'none',
+    [completedProductActionRows, getReviewStatus, product],
+  );
+  const latestDiagnosisReview = useMemo(
+    () =>
+      product
+        ? getLatestReview(
+            completedProductActionRows[0]
+              ? {
+                  actionId: completedProductActionRows[0].action.id,
+                  executionId: completedProductActionRows[0].task.sourceRefs.executionId,
+                  productId: product.id,
+                  taskId: completedProductActionRows[0].task.id,
+                }
+              : { productId: product.id },
+          )
+        : undefined,
+    [completedProductActionRows, getLatestReview, product],
+  );
 
   const causeDecisionCards = useMemo(() => {
     if (!productId || !product || causes.length === 0) return [];
@@ -210,8 +296,8 @@ export function ProductDiagnosisDetail() {
   }, [productId, product, strategyList, causes]);
 
   const pendingActionCount = useMemo(
-    () => productActions.filter((a) => a.status === 'pending').length,
-    [productActions],
+    () => productActionRows.filter((row) => row.task.status === 'pending_decision').length,
+    [productActionRows],
   );
 
   const sopFlowCtx = useMemo(
@@ -238,8 +324,8 @@ export function ProductDiagnosisDetail() {
   );
 
   const flowActionKey = useMemo(
-    () => productActions.find((a) => a.status === 'pending')?.id ?? null,
-    [productActions],
+    () => productActionRows.find((row) => row.task.status === 'pending_decision')?.action.id ?? null,
+    [productActionRows],
   );
 
   const resolvedKnowledge = useMemo(() => {
@@ -822,33 +908,29 @@ export function ProductDiagnosisDetail() {
             </div>
             
             <div className="p-6">
-              {productActions.length === 0 ? (
+              {productActionRows.length === 0 ? (
                 <div className="text-center py-8">
                   <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <div className="text-sm text-gray-500">暂无可执行动作</div>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {productActions.map((action) => {
-                    const exec =
-                      executions.find((e) => e.actionId === action.id) ?? null;
-                    const flowView = mapLegacyActionToPhase(
-                      action,
-                      exec,
-                      getOverride(action.id),
-                    );
+                  {productActionRows.map(({ action, task }) => {
                     return (
                     <div key={action.id} className={`rounded-lg p-4 border ${
-                      action.status === 'pending' ? 'bg-orange-50 border-orange-200' :
-                      action.status === 'approved' ? 'bg-green-50 border-green-200' :
-                      action.status === 'running' ? 'bg-blue-50 border-blue-200' :
+                      task.status === 'waiting_input' ? 'bg-amber-50 border-amber-200' :
+                      task.status === 'diagnosing' ? 'bg-violet-50 border-violet-200' :
+                      task.status === 'pending_decision' ? 'bg-orange-50 border-orange-200' :
+                      task.status === 'approved' ? 'bg-green-50 border-green-200' :
+                      task.status === 'executing' ? 'bg-blue-50 border-blue-200' :
+                      task.status === 'failed' || task.status === 'needs_takeover' ? 'bg-red-50 border-red-200' :
                       'bg-gray-50 border-gray-200'
                     }`}>
                       <div className="flex items-start justify-between mb-2 gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-2 flex-wrap">
                             <div className="font-medium text-gray-900">{action.name}</div>
-                            <TaskStateBadge phase={flowView.phase} />
+                            <TaskStateBadge phase={task.status} />
                           </div>
                           <div className="text-sm text-gray-600 mb-2">{action.type} · {action.reason}</div>
                           <div className="text-sm text-green-600 bg-white rounded px-3 py-2">
@@ -857,12 +939,32 @@ export function ProductDiagnosisDetail() {
                         </div>
                       </div>
                       <TaskFlowSidePanel
-                        view={flowView}
+                        task={task}
                         actionId={action.id}
                         productId={productId}
                         compact
+                        showActions={false}
                         className="mt-3 !shadow-none"
                       />
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="text-xs h-8"
+                          onClick={() =>
+                            setSelectedActionId(action.id)
+                          }
+                        >
+                          打开推进中心
+                        </Button>
+                        {task.status === 'pending_decision' ? (
+                          <Button variant="outline" size="sm" className="text-xs h-8" asChild>
+                            <Link to={`/approvals?actionId=${encodeURIComponent(action.id)}`}>
+                              去拍板中心
+                            </Link>
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                     );
                   })}
@@ -904,7 +1006,8 @@ export function ProductDiagnosisDetail() {
             </div>
           </div>
 
-          {diagnosisReviewPrefill ? (
+          {diagnosisReviewPrefill &&
+          (completedProductActionRows.length > 0 || diagnosisReviewStatus !== 'none') ? (
             <div className="bg-white rounded-lg border border-violet-200 overflow-hidden shadow-sm">
               <div className="px-6 py-4 bg-violet-50/90 border-b border-violet-200">
                 <div className="flex items-center gap-3">
@@ -918,23 +1021,37 @@ export function ProductDiagnosisDetail() {
                 </div>
               </div>
               <div className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <p className="text-sm text-gray-600 leading-relaxed flex-1">
-                  无需编辑资产明细。此处只记下你的复盘要点；若勾选「参考经验」，将进入候选池并排队轻量核对。
-                </p>
-                <Button
-                  type="button"
-                  className="shrink-0 gap-2 bg-violet-700 hover:bg-violet-800"
-                  onClick={() =>
-                    openDeposition({
-                      source: 'diagnosis_complete',
-                      ...diagnosisReviewPrefill,
-                      defaultSuggest: true,
-                    })
-                  }
-                >
-                  <Sparkles className="w-4 h-4" />
-                  记入复盘
-                </Button>
+                <div className="flex-1 space-y-2">
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    无需编辑资产明细。只要记下这轮处理结论，系统就会把它留在结果跟踪里，并在同类问题出现时优先参考。
+                  </p>
+                  {latestDiagnosisReview ? (
+                    <p className="text-sm text-violet-900/90 leading-relaxed">
+                      最近经验：{latestDiagnosisReview.lesson}
+                    </p>
+                  ) : null}
+                </div>
+                {diagnosisReviewStatus === 'none' ? (
+                  <Button
+                    type="button"
+                    className="shrink-0 gap-2 bg-violet-700 hover:bg-violet-800"
+                    onClick={() =>
+                      openDeposition({
+                        ...diagnosisReviewPrefill,
+                        source: 'diagnosis_complete',
+                        defaultSuggest: true,
+                      })
+                    }
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    形成复盘
+                  </Button>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-800">
+                    <Sparkles className="w-4 h-4" />
+                    {diagnosisReviewStatus === 'candidate' ? '已进入经验候选区' : '已形成复盘'}
+                  </span>
+                )}
               </div>
             </div>
           ) : null}
@@ -968,7 +1085,7 @@ export function ProductDiagnosisDetail() {
         </div>
 
         {/* Approval Entry */}
-        {productActions.filter(a => a.status === 'pending').length > 0 && (
+        {pendingActionCount > 0 && (
           <div className="border-b border-gray-200">
             <div className="px-6 py-4 bg-orange-50 border-b border-orange-200">
               <div className="flex items-center gap-2">
@@ -980,18 +1097,32 @@ export function ProductDiagnosisDetail() {
             <div className="p-6">
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
                 <div className="text-sm text-orange-900 mb-1">
-                  {productActions.filter(a => a.status === 'pending').length} 个动作等待审批
+                  {pendingActionCount} 个动作等待拍板
                 </div>
                 <div className="text-xs text-orange-700 mb-3">
-                  审批后将进入执行队列
+                  先确认是否放行，再决定是否立即去推进
                 </div>
-                <Link
-                  to="/approvals"
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
-                >
-                  <PlayCircle className="w-4 h-4" />
-                  立即审批
-                </Link>
+                <div className="flex flex-col gap-2">
+                  {productActionRows.find((row) => row.task.status === 'pending_decision') ? (
+                    <Button
+                      type="button"
+                      className="w-full justify-center text-sm"
+                      onClick={() => {
+                        const firstPending = productActionRows.find(
+                          (row) => row.task.status === 'pending_decision',
+                        );
+                        if (!firstPending) return;
+                        setSelectedActionId(firstPending.action.id);
+                      }}
+                    >
+                      <PlayCircle className="w-4 h-4" />
+                      打开推进中心
+                    </Button>
+                  ) : null}
+                  <Button variant="outline" className="w-full justify-center text-sm" asChild>
+                    <Link to="/approvals">去拍板中心</Link>
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -1092,6 +1223,18 @@ export function ProductDiagnosisDetail() {
         open={flowSupportOpen}
         onClose={() => setFlowSupportOpen(false)}
         flowBundle={resolvedKnowledge.flowBundle}
+      />
+
+      <TaskActionDrawer
+        open={selectedTask != null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedActionId(null);
+        }}
+        task={selectedTask?.task ?? null}
+        actionId={selectedTask?.actionId}
+        productId={selectedTask?.productId}
+        detailHref={productId ? `/products/${productId}?focus=actions` : undefined}
+        source="diagnosis"
       />
 
       <StrategySupportDrawer

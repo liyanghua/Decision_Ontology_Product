@@ -72,13 +72,21 @@ export function ReviewDepositionDialog({ open, prefill, onClose, onCommit }: Pro
                 <div className="text-xs font-medium text-slate-500 mb-0.5">本次处理对象</div>
                 <div className="text-slate-900 font-medium leading-snug">{prefill.objectLabel}</div>
               </div>
+              {prefill.originalProblem ? (
+                <div className="rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2">
+                  <div className="text-xs font-medium text-slate-500 mb-0.5">原始问题</div>
+                  <div className="text-slate-800 leading-relaxed">{prefill.originalProblem}</div>
+                </div>
+              ) : null}
               <div className="rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2">
                 <div className="text-xs font-medium text-slate-500 mb-0.5">采取的动作</div>
                 <div className="text-slate-800 leading-relaxed">{prefill.actionSummary}</div>
               </div>
               <div className="rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2">
                 <div className="text-xs font-medium text-slate-500 mb-0.5">实际结果</div>
-                <div className="text-slate-800 leading-relaxed">{prefill.outcomeSummary}</div>
+                <div className="text-slate-800 leading-relaxed">
+                  {prefill.actualResult || prefill.outcomeSummary}
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -106,7 +114,7 @@ export function ReviewDepositionDialog({ open, prefill, onClose, onCommit }: Pro
                     建议作为后续决策的参考经验
                   </Label>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    勾选后，将进入候选池并由后台做轻量核对；不勾选则仅保存你的复盘记录，仍可在回放页查看路径示意。
+                    勾选后，将进入经验候选区并由系统先做一轮轻量核对；不勾选则仅保存你的复盘记录，仍可在结果复盘里查看路径示意。
                   </p>
                 </div>
               </div>
@@ -133,7 +141,7 @@ export function ReviewDepositionDialog({ open, prefill, onClose, onCommit }: Pro
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-medium text-slate-900">已形成 1 条复盘记录</div>
-                  <p className="text-slate-600 text-xs mt-0.5">系统已记住这次处理，便于你下次对照。</p>
+                  <p className="text-slate-600 text-xs mt-0.5">系统已记住这次处理，后续可继续对照参考。</p>
                 </div>
               </li>
               <li className="flex gap-2 items-start">
@@ -145,12 +153,12 @@ export function ReviewDepositionDialog({ open, prefill, onClose, onCommit }: Pro
                 />
                 <div>
                   <div className={cn('font-medium', lastSuggest ? 'text-slate-900' : 'text-slate-500')}>
-                    已进入候选经验池
+                    已进入经验候选区
                   </div>
                   <p className="text-slate-600 text-xs mt-0.5">
                     {lastSuggest
-                      ? '同类场景决策时，可能优先参考本条结论。'
-                      : '本次未勾选参考经验，已跳过候选池；可随时补记。'}
+                      ? '同类问题再出现时，系统可能优先参考这次处理。'
+                      : '本次未勾选参考经验，已跳过经验候选区；可随时补记。'}
                   </p>
                 </div>
               </li>
@@ -163,12 +171,12 @@ export function ReviewDepositionDialog({ open, prefill, onClose, onCommit }: Pro
                 />
                 <div>
                   <div className={cn('font-medium', lastSuggest ? 'text-slate-900' : 'text-slate-500')}>
-                    已推荐给资产审核
+                    可供后续类似问题参考
                   </div>
                   <p className="text-slate-600 text-xs mt-0.5">
                     {lastSuggest
-                      ? '后台会做一次轻量核对，通过后将更有利于团队复用。'
-                      : '未进入审核队列；仅复盘记录保留。'}
+                      ? '系统会带着这次经验，帮助后续建议更贴近真实处理方式。'
+                      : '这条记录会保留在复盘里，便于你下次快速回看。'}
                   </p>
                 </div>
               </li>

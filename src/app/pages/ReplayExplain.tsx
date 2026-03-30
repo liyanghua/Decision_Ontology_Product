@@ -160,6 +160,10 @@ export function ReplayExplain() {
 
   const run = baseObject?.run;
   const structured = run?.structured;
+  const selectedProduct = useMemo(
+    () => products.find((product) => product.id === goodsId) ?? null,
+    [goodsId, products],
+  );
 
   const coreItems = useMemo(
     () => blockItemsStructured(structured?.core_conclusion, 'highlights'),
@@ -236,15 +240,15 @@ export function ReplayExplain() {
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 flex gap-3 items-start">
         <AlertTriangle className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
         <div>
-          <p className="font-medium text-amber-950">历史诊断回放（Replay）</p>
+          <p className="font-medium text-amber-950">结果复盘与前后对照</p>
           <p className="text-sm text-amber-900/90 mt-1">
-            本页用于「看结果」：对照不同统计日的诊断结论与解析要点，便于汇报与复盘；展示的是加载的数据快照，不等同于实时线上结论。
+            这页用来回看一轮处理前后的盘面变化，方便汇报、复盘和下轮判断；展示的是当时留档的判断快照，不等同于实时线上盘面。
           </p>
         </div>
       </div>
 
       <p className="text-sm text-slate-700 mb-4 leading-relaxed">
-        适合在审批、执行之后演示：用同一商品切换日期，讲清「落地前后盘面怎么说」；无需理解底层表结构。
+        适合在处理完成后回看：同一商品切换基准日和对比日，就能讲清这轮动作前后盘面怎么变、为什么这么判断、哪些经验值得留下。
       </p>
 
       <div
@@ -253,38 +257,48 @@ export function ReplayExplain() {
       >
         <p className="text-sm font-semibold text-slate-900 mb-3">从操盘动作到复盘沉淀（示意）</p>
         <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-          完整环境中由服务与核对流程驱动；此处为前台闭环示意，便于理解「处理结果被记住，并可能反哺后续决策」。
+          这里用前台能理解的方式把闭环串起来，重点不是系统怎么跑，而是这次处理怎样被记住、怎样帮助下次判断更快更准。
         </p>
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
           <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium">前台处理</span>
           <span className="text-slate-400" aria-hidden>
             →
           </span>
-          <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium">复盘记录</span>
+          <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium">任务完成</span>
+          <span className="text-slate-400" aria-hidden>
+            →
+          </span>
+          <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium">复盘沉淀</span>
           <span className="text-slate-400" aria-hidden>
             →
           </span>
           <span className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 font-medium text-violet-900">
-            候选经验
+            经验候选区
           </span>
           <span className="text-slate-400" aria-hidden>
             →
           </span>
           <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium">轻量核对</span>
+          <span className="text-slate-400" aria-hidden>
+            →
+          </span>
+          <span className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 font-medium text-emerald-900">
+            后续建议参考
+          </span>
         </div>
       </div>
 
       <div className="mb-4 flex flex-col lg:flex-row lg:items-end gap-4 lg:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">回放与解释</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">结果复盘</h1>
           <p className="text-sm text-gray-600 mt-1">
-            按 goods_id + 统计日查看一次决策运行的输入与输出（DecisionRequest / DecisionRun）
+            对照这轮处理前后的盘面变化，方便汇报、复盘和下轮判断。
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm">
-            <span className="text-gray-600">goods_id</span>
+            <span className="text-gray-600">商品ID</span>
             <select
               value={goodsId}
               onChange={(e) => {
@@ -301,7 +315,7 @@ export function ReplayExplain() {
             </select>
           </label>
           <label className="flex items-center gap-2 text-sm">
-            <span className="text-gray-600">统计日（基准）</span>
+            <span className="text-gray-600">基准日</span>
             <select
               value={statistDate}
               onChange={(e) => setStatistDate(e.target.value)}
@@ -322,7 +336,7 @@ export function ReplayExplain() {
               onChange={(e) => setCompareDate(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-[120px]"
             >
-              <option value="">不对比</option>
+              <option value="">只看本轮</option>
               {statDates
                 .filter((d) => d !== statistDate)
                 .map((d) => (
@@ -337,60 +351,81 @@ export function ReplayExplain() {
 
       {!run && (
         <div className="rounded-lg border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">
-          当前组合无诊断记录，请更换 goods_id 或统计日。
+          当前组合无诊断记录，请更换商品ID或基准日。
         </div>
       )}
 
       {run && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-4">
-          {/* Left — Request Snapshot */}
+          {/* Left — Snapshot */}
           <aside className="lg:col-span-4 space-y-4">
             <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 bg-slate-50">
-                <h2 className="text-sm font-semibold text-gray-900">Request Snapshot</h2>
-                <p className="text-xs text-gray-600 mt-0.5">输入快照 · 取值来自 CSV 原始字段</p>
+                <h2 className="text-sm font-semibold text-gray-900">本轮盘面快照</h2>
+                <p className="text-xs text-gray-600 mt-0.5">先看这轮判断基于哪些盘面事实，再决定结论是否站得住。</p>
               </div>
               <div className="p-4 space-y-3 text-sm">
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="text-gray-500">goods_id</div>
-                  <div className="font-mono text-gray-900">{run.request.goodsId}</div>
-                  <div className="text-gray-500">statist_date</div>
-                  <div className="font-mono text-gray-900">{run.request.statistDate}</div>
-                  <div className="text-gray-500">data_load_time</div>
-                  <div className="font-mono text-gray-900">
+                  <div className="text-gray-500">处理对象</div>
+                  <div className="text-gray-900">{selectedProduct?.name ?? run.request.goodsId}</div>
+                  <div className="text-gray-500">基准日</div>
+                  <div className="text-gray-900">{run.request.statistDate}</div>
+                  <div className="text-gray-500">数据更新时间</div>
+                  <div className="text-gray-900">
                     {run.request.dataLoadTime ?? '—'}
                   </div>
-                  <div className="text-gray-500">{DIAG_GRADE_LABEL}</div>
-                  <div className="font-mono text-gray-900">
+                  <div className="text-gray-500">当前诊断等级</div>
+                  <div className="text-gray-900">
                     {run.request.keyMetrics.diagnosis_grade?.trim()
                       ? run.request.keyMetrics.diagnosis_grade
                       : '—'}
                   </div>
                 </div>
-                <div className="border-t border-gray-100 pt-3">
-                  <p className="text-xs font-medium text-gray-500 mb-2">Key metrics</p>
-                  <div className="max-h-[420px] overflow-y-auto space-y-1">
-                    {DETAIL_METRIC_KEYS.map((key) => {
-                      const v = run.request.keyMetrics[key] ?? '';
-                      const label = DETAIL_METRIC_LABEL_ZH[key];
-                      return (
-                        <div
-                          key={key}
-                          className="flex justify-between gap-2 text-xs border-b border-gray-50 pb-1"
-                        >
-                          <span className="text-gray-600 shrink-0">{label}</span>
-                          <span
-                            className={`font-mono text-right break-all ${
-                              v.trim() === '' ? 'text-gray-400' : 'text-gray-900'
-                            }`}
-                          >
-                            {v.trim() === '' ? '—' : v}
-                          </span>
-                        </div>
-                      );
-                    })}
+                <details className="rounded-lg border border-slate-200 bg-slate-50/70">
+                  <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-700">
+                    查看原始取值明细
+                  </summary>
+                  <div className="border-t border-slate-200 px-3 py-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="text-gray-500">goods_id</div>
+                      <div className="font-mono text-gray-900">{run.request.goodsId}</div>
+                      <div className="text-gray-500">statist_date</div>
+                      <div className="font-mono text-gray-900">{run.request.statistDate}</div>
+                      <div className="text-gray-500">data_load_time</div>
+                      <div className="font-mono text-gray-900">{run.request.dataLoadTime ?? '—'}</div>
+                      <div className="text-gray-500">{DIAG_GRADE_LABEL}</div>
+                      <div className="font-mono text-gray-900">
+                        {run.request.keyMetrics.diagnosis_grade?.trim()
+                          ? run.request.keyMetrics.diagnosis_grade
+                          : '—'}
+                      </div>
+                    </div>
+                    <div className="border-t border-gray-100 pt-3">
+                      <p className="text-xs font-medium text-gray-500 mb-2">关键指标原始取值</p>
+                      <div className="max-h-[420px] overflow-y-auto space-y-1">
+                        {DETAIL_METRIC_KEYS.map((key) => {
+                          const v = run.request.keyMetrics[key] ?? '';
+                          const label = DETAIL_METRIC_LABEL_ZH[key];
+                          return (
+                            <div
+                              key={key}
+                              className="flex justify-between gap-2 text-xs border-b border-gray-50 pb-1"
+                            >
+                              <span className="text-gray-600 shrink-0">{label}</span>
+                              <span
+                                className={`font-mono text-right break-all ${
+                                  v.trim() === '' ? 'text-gray-400' : 'text-gray-900'
+                                }`}
+                              >
+                                {v.trim() === '' ? '—' : v}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </details>
               </div>
             </div>
           </aside>
@@ -408,7 +443,7 @@ export function ReplayExplain() {
                 }`}
               >
                 <LayoutList className="w-4 h-4" />
-                结构化渲染
+                复盘摘要
               </button>
               <button
                 type="button"
@@ -420,7 +455,7 @@ export function ReplayExplain() {
                 }`}
               >
                 <FileJson className="w-4 h-4" />
-                原始 diagnosis_content_json
+                原始内容明细
               </button>
             </div>
 
@@ -433,7 +468,7 @@ export function ReplayExplain() {
                   spellCheck={false}
                 />
                 {!run.diagnosisContentRawJson.trim() && (
-                  <p className="px-4 pb-4 text-xs text-gray-500">该单元格为空，结构化内容可能来自 diagnosis_content 兜底解析。</p>
+                  <p className="px-4 pb-4 text-xs text-gray-500">当前没有保留原始诊断内容，页面已用结构化结果补齐展示。</p>
                 )}
               </div>
             )}
@@ -524,23 +559,23 @@ export function ReplayExplain() {
             <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 bg-violet-50 flex items-center gap-2">
                 <Info className="w-4 h-4 text-violet-700" />
-                <h2 className="text-sm font-semibold text-gray-900">Run 元数据</h2>
+                <h2 className="text-sm font-semibold text-gray-900">本次记录信息</h2>
               </div>
               <dl className="p-4 text-xs space-y-2 font-mono">
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500 shrink-0">DecisionObject.schemaVersion</dt>
+                  <dt className="text-gray-500 shrink-0">记录版本</dt>
                   <dd>{baseObject?.schemaVersion}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500 shrink-0">run.id</dt>
+                  <dt className="text-gray-500 shrink-0">记录编号</dt>
                   <dd className="text-right break-all">{run.id}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500 shrink-0">source</dt>
+                  <dt className="text-gray-500 shrink-0">数据来源</dt>
                   <dd>{run.source}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500 shrink-0">recordedAt</dt>
+                  <dt className="text-gray-500 shrink-0">记录时间</dt>
                   <dd className="text-right">{run.recordedAt}</dd>
                 </div>
               </dl>
@@ -549,7 +584,7 @@ export function ReplayExplain() {
             <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 bg-orange-50">
                 <h2 className="text-sm font-semibold text-gray-900">数据缺失与影响</h2>
-                <p className="text-xs text-gray-600 mt-0.5">structured.missing_data_impact</p>
+                <p className="text-xs text-gray-600 mt-0.5">这轮判断里仍然缺哪些信息，以及它会影响什么。</p>
               </div>
               <div className="p-4">
                 {missingItems.length === 0 ? (
@@ -575,7 +610,7 @@ export function ReplayExplain() {
                 <h2 className="text-sm font-semibold text-gray-900">策略与机会支持</h2>
               </div>
               <p className="text-xs text-gray-600">
-                基于当前回放 goods_id 与问题摘录匹配的短片段；非诊断真源。
+                基于当前商品与问题摘录匹配的短片段，用来补充判断，不替代诊断结论。
               </p>
               <StrategySupportTrigger
                 compact
@@ -597,7 +632,7 @@ export function ReplayExplain() {
         open={strategySupportOpen}
         onClose={() => setStrategySupportOpen(false)}
         snippets={replayResolved.strategySnippets}
-        contextHint={`回放 goods_id ${goodsId}${compareDate ? ' · 已开对比日' : ''}`}
+        contextHint={`结果复盘 · 商品 ${selectedProduct?.name ?? goodsId}${compareDate ? ' · 已打开前后对照' : ''}`}
       />
     </div>
   );

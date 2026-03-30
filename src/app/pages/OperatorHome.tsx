@@ -21,6 +21,9 @@ import {
 } from '../data/operatorWorkspacePrefs';
 import { SuggestedActionList } from '../components/operatorHome/SuggestedActionList';
 import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDrawer';
+import { ReviewDigestPanel } from '../components/review/ReviewDigestPanel';
+import { TaskActionDrawer } from '../components/taskFlow/TaskActionDrawer';
+import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import type {
@@ -36,6 +39,7 @@ function categoryForProduct(productId?: string): string | undefined {
 
 /** 经营搭档首页（英文：OperatorHome / OperatorWorkbenchHome） */
 export function OperatorHome() {
+  const { getOverride } = useTaskFlowOverrides();
   const [shellStatus, setShellStatus] = useState<'loading' | 'empty' | 'normal'>('loading');
   const [strategyOpen, setStrategyOpen] = useState(false);
   const [strategySnippets, setStrategySnippets] = useState<SupportSnippet[]>([]);
@@ -45,14 +49,43 @@ export function OperatorHome() {
     undefined,
   );
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<{
+    actionId?: string;
+    productId?: string;
+    detailHref?: string;
+  } | null>(null);
   const onboardingAutoOpenedRef = useRef(false);
 
-  const { model, isEmpty } = useMemo(() => loadOperatorHomePageModel(), []);
+  const { model, isEmpty } = useMemo(() => loadOperatorHomePageModel(getOverride), [getOverride]);
   const categoryOptions = useMemo(() => getCategoryOptionsFromCatalog(), []);
   const displayMemory = useMemo(
     () => mergeMemoryWithWorkspace(model.memory, workspacePrefs ?? null),
     [model.memory, workspacePrefs],
   );
+  const selectedTaskPayload = useMemo(() => {
+    if (!selectedTask?.actionId) return null;
+    const fromInProgress = model.inProgressTasks.find((item) => item.actionId === selectedTask.actionId);
+    if (fromInProgress) {
+      return {
+        task: fromInProgress.task,
+        actionId: fromInProgress.actionId,
+        productId: selectedTask.productId ?? fromInProgress.productId,
+        detailHref:
+          selectedTask.detailHref ??
+          (fromInProgress.productId ? `/products/${fromInProgress.productId}?focus=actions` : undefined),
+      };
+    }
+    const fromSuggested = model.suggestedActions.find((item) => item.actionId === selectedTask.actionId);
+    if (fromSuggested) {
+      return {
+        task: fromSuggested.task,
+        actionId: fromSuggested.actionId,
+        productId: selectedTask.productId ?? fromSuggested.productId,
+        detailHref: selectedTask.detailHref ?? fromSuggested.detailHref,
+      };
+    }
+    return null;
+  }, [model.inProgressTasks, model.suggestedActions, selectedTask]);
 
   const openHomeStrategy = (contextHint: string, patch: Partial<KnowledgeContextInput>) => {
     const r = resolveKnowledgeSupport({
@@ -178,6 +211,13 @@ export function OperatorHome() {
             shellStatus === 'loading' ? 'loading' : shellStatus === 'empty' ? 'empty' : 'normal'
           }
           onSupportClick={onTaskSupport}
+          onOpenTask={(item) =>
+            setSelectedTask({
+              actionId: item.actionId,
+              productId: item.productId,
+              detailHref: item.productId ? `/products/${item.productId}?focus=actions` : undefined,
+            })
+          }
         />
         <SuggestedActionList
           suggestions={model.suggestedActions}
@@ -185,8 +225,17 @@ export function OperatorHome() {
             shellStatus === 'loading' ? 'loading' : shellStatus === 'empty' ? 'empty' : 'normal'
           }
           onSupportClick={onSuggestedSupport}
+          onOpenTask={(item) =>
+            setSelectedTask({
+              actionId: item.actionId,
+              productId: item.productId,
+              detailHref: item.detailHref,
+            })
+          }
         />
       </section>
+
+      <ReviewDigestPanel recentCompletedTasks={model.recentCompletedTasks} />
 
       <StrategySupportDrawer
         open={strategyOpen}
@@ -201,6 +250,18 @@ export function OperatorHome() {
         categoryOptions={categoryOptions}
         seed={workspacePrefs ?? null}
         onComplete={setWorkspacePrefs}
+      />
+
+      <TaskActionDrawer
+        open={selectedTaskPayload != null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTask(null);
+        }}
+        task={selectedTaskPayload?.task ?? null}
+        actionId={selectedTaskPayload?.actionId}
+        productId={selectedTaskPayload?.productId}
+        detailHref={selectedTaskPayload?.detailHref}
+        source="home"
       />
     </div>
   );

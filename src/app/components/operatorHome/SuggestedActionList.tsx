@@ -3,10 +3,6 @@ import { ClipboardCheck } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import type { SuggestedActionVM } from '../../data/operatorHomeMock';
-import { actions } from '../../data/liveCatalog';
-import { executions } from '../../data/mockData';
-import { mapLegacyActionToPhase, OPERATOR_TASK_PRESENTATION } from '../../data/taskFlow';
-import { useTaskFlowOverrides } from '../../contexts/TaskFlowOverrideContext';
 import { OperatorSupportHint } from './OperatorSupportHint';
 import { suggestedVmToDecisionCard } from '../../data/decisionCards/mapFromOperatorHome';
 import { DecisionCardFrame } from '../decisionCards/DecisionCardFrame';
@@ -16,15 +12,15 @@ type SuggestedActionListProps = {
   suggestions: SuggestedActionVM[];
   status?: 'loading' | 'empty' | 'normal';
   onSupportClick?: (s: SuggestedActionVM) => void;
+  onOpenTask?: (s: SuggestedActionVM) => void;
 };
 
 export function SuggestedActionList({
   suggestions,
   status = 'normal',
   onSupportClick,
+  onOpenTask,
 }: SuggestedActionListProps) {
-  const { getOverride } = useTaskFlowOverrides();
-
   return (
     <Card className="border-slate-200 shadow-sm h-full">
       <CardHeader className="pb-3">
@@ -32,7 +28,7 @@ export function SuggestedActionList({
           <ClipboardCheck className="w-4 h-4 text-slate-700" />
           今日建议动作
         </CardTitle>
-        <CardDescription>待经营决策的动作；先看诊断里的打法，再一键去审批推进。</CardDescription>
+        <CardDescription>待经营拍板的动作；先看诊断里的打法，再在抽屉里直接去推进。</CardDescription>
       </CardHeader>
       <CardContent>
         {status === 'loading' ? (
@@ -46,24 +42,11 @@ export function SuggestedActionList({
         ) : (
           <ul className="space-y-4">
             {suggestions.map((a) => {
-              const action = a.actionId ? actions.find((x) => x.id === a.actionId) : undefined;
-              const exec = a.actionId
-                ? executions.find((e) => e.actionId === a.actionId) ?? null
-                : null;
-              const demo = a.actionId ? getOverride(a.actionId) : undefined;
-              const phase = action ? mapLegacyActionToPhase(action, exec, demo).phase : null;
-              const baseCard = suggestedVmToDecisionCard(a);
-              const card =
-                action && phase
-                  ? {
-                      ...baseCard,
-                      current_status: OPERATOR_TASK_PRESENTATION[phase].labelZh,
-                    }
-                  : baseCard;
+              const card = suggestedVmToDecisionCard(a);
               return (
                 <li key={a.id} className="space-y-2">
                   <div className="flex items-center gap-2 px-0.5">
-                    {phase ? <TaskStateBadge phase={phase} /> : null}
+                    <TaskStateBadge phase={a.task.status} />
                   </div>
                   <div className="relative">
                     <DecisionCardFrame card={card} to={a.detailHref}>
@@ -82,9 +65,20 @@ export function SuggestedActionList({
                     <Button variant="outline" size="sm" className="text-xs h-8" asChild>
                       <Link to={a.detailHref}>看诊断里的打法</Link>
                     </Button>
-                    <Button size="sm" className="text-xs h-8" asChild>
-                      <Link to={a.processHref}>去推进（审批）</Link>
-                    </Button>
+                    {onOpenTask ? (
+                      <Button
+                        size="sm"
+                        className="text-xs h-8"
+                        type="button"
+                        onClick={() => onOpenTask(a)}
+                      >
+                        去推进
+                      </Button>
+                    ) : (
+                      <Button size="sm" className="text-xs h-8" asChild>
+                        <Link to={a.processHref}>去推进</Link>
+                      </Button>
+                    )}
                   </div>
                 </li>
               );

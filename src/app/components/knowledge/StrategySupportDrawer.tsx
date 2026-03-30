@@ -54,7 +54,7 @@ export function StrategySupportDrawer({
       <div className="absolute right-0 top-0 bottom-0 w-full max-w-[520px] bg-white shadow-xl flex flex-col border-l border-gray-200">
         <div className="h-14 border-b border-gray-200 flex items-center justify-between px-4 shrink-0">
           <div>
-            <div className="text-xs text-gray-500">Strategy Support</div>
+            <div className="text-xs text-gray-500">策略支持</div>
             <div className="text-sm font-semibold text-gray-900">策略与机会支持</div>
             {contextHint && (
               <div className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[340px]">
@@ -76,7 +76,7 @@ export function StrategySupportDrawer({
           <KnowledgeDisclaimerStrip variant="slate" />
 
           {snippets.length === 0 && (
-            <p className="text-sm text-gray-500">暂无可展示的短片段（mock 待扩充）。</p>
+            <p className="text-sm text-gray-500">当前还没有可展示的支持片段。</p>
           )}
 
           {BUCKET_ORDER.map((bucket) => {
@@ -105,7 +105,7 @@ export function StrategySupportDrawer({
                         建议用法：{item.recommended_usage}
                         {item.relevance_score > 0 && (
                           <span className="ml-2 text-violet-700">
-                            相关度（演示） {(item.relevance_score * 100).toFixed(0)}%
+                            相关度 {(item.relevance_score * 100).toFixed(0)}%
                           </span>
                         )}
                       </div>

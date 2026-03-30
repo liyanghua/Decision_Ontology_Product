@@ -5,11 +5,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  X,
-  ThumbsUp,
-  ThumbsDown,
-  PauseCircle,
-  Settings,
   TrendingUp,
   ShieldAlert,
   History,
@@ -19,12 +14,13 @@ import {
   Target,
   Zap,
 } from 'lucide-react';
-import { actions, products, strategies } from '../data/liveCatalog';
-import { executions } from '../data/mockData';
-import { mapLegacyActionToPhase } from '../data/taskFlow';
+import { products, strategies } from '../data/liveCatalog';
+import { listOperatorTaskRows } from '../data/taskFlow';
 import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
+import { TaskActionPanel } from '../components/taskFlow/TaskActionPanel';
 import { TaskFlowSidePanel } from '../components/taskFlow/TaskFlowSidePanel';
 import { TaskStateBadge } from '../components/taskFlow/TaskStateBadge';
+import { TaskTimelineFeed } from '../components/taskFlow/TaskTimelineFeed';
 import { inferPhaseForContext } from '../data/sop/diagnosisFlowSkeleton';
 import { inferProblemKeyFromText, resolveKnowledgeSupport } from '../data/expertKnowledge';
 import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
@@ -33,21 +29,35 @@ import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
 export function ApprovalCenter() {
   const { getOverride } = useTaskFlowOverrides();
   const [searchParams] = useSearchParams();
-  const [selectedActionId, setSelectedActionId] = useState<string | null>(
-    actions.filter((a) => a.status === 'pending')[0]?.id || null,
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+  const approvalRows = useMemo(
+    () =>
+      listOperatorTaskRows(getOverride)
+        .map((row) => {
+          const product = products.find((p) => p.id === row.action.productId) ?? null;
+          return { ...row, product };
+        })
+        .filter((row) => row.task.status === 'pending_decision'),
+    [getOverride],
   );
 
   useEffect(() => {
     const aid = searchParams.get('actionId')?.trim();
-    if (aid && actions.some((a) => a.id === aid)) {
+    if (aid && approvalRows.some((row) => row.action.id === aid)) {
       setSelectedActionId(aid);
     }
-  }, [searchParams]);
-  const [showParamsModal, setShowParamsModal] = useState(false);
-  const [approvalNote, setApprovalNote] = useState('');
+  }, [approvalRows, searchParams]);
+  useEffect(() => {
+    if (approvalRows.length === 0) {
+      setSelectedActionId(null);
+      return;
+    }
+    if (selectedActionId && approvalRows.some((row) => row.action.id === selectedActionId)) {
+      return;
+    }
+    setSelectedActionId(approvalRows[0].action.id);
+  }, [approvalRows, selectedActionId]);
   const [flowSupportOpen, setFlowSupportOpen] = useState(false);
-
-  const pendingActions = actions.filter(a => a.status === 'pending');
 
   const approvalSopPhase = useMemo(
     () =>
@@ -56,19 +66,15 @@ export function ApprovalCenter() {
         hasGoodsId: true,
         hasMetricsRow: true,
         hasStructuredDiagnosis: true,
-        pendingActionCount: pendingActions.length,
+        pendingActionCount: approvalRows.length,
       }),
-    [pendingActions.length],
+    [approvalRows.length],
   );
 
-  const selectedAction = actions.find(a => a.id === selectedActionId);
-  const selectedExecution = selectedAction
-    ? executions.find((e) => e.actionId === selectedAction.id) ?? null
-    : null;
-  const selectedTaskView = selectedAction
-    ? mapLegacyActionToPhase(selectedAction, selectedExecution, getOverride(selectedAction.id))
-    : null;
-  const selectedProduct = selectedAction ? products.find(p => p.id === selectedAction.productId) : null;
+  const selectedRow = approvalRows.find((row) => row.action.id === selectedActionId) ?? null;
+  const selectedAction = selectedRow?.action ?? null;
+  const selectedTask = selectedRow?.task ?? null;
+  const selectedProduct = selectedRow?.product ?? null;
   const relatedStrategy = selectedAction ? strategies[selectedAction.productId as keyof typeof strategies]?.find(
     s => s.id === selectedAction.strategyId
   ) : null;
@@ -90,18 +96,6 @@ export function ApprovalCenter() {
       stageKey: approvalSopPhase,
     });
   }, [selectedAction, selectedProduct, approvalSopPhase]);
-
-  const handleApprove = () => {
-    alert('动作已批准，将进入执行队列');
-  };
-
-  const handleReject = () => {
-    alert('动作已驳回');
-  };
-
-  const handleDefer = () => {
-    alert('动作已延后处理');
-  };
 
   if (!selectedAction || !selectedProduct) {
     return (
@@ -127,7 +121,7 @@ export function ApprovalCenter() {
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="font-semibold text-gray-900 mb-1">待审批动作</h2>
-          <div className="text-sm text-gray-600">{pendingActions.length} 个待处理</div>
+          <div className="text-sm text-gray-600">{approvalRows.length} 个待处理</div>
         </div>
 
         {/* Filters */}
@@ -142,10 +136,8 @@ export function ApprovalCenter() {
 
         {/* Action List */}
         <div className="flex-1 overflow-y-auto">
-          {pendingActions.map((action, index) => {
-            const product = products.find(p => p.id === action.productId);
-            const exec = executions.find((e) => e.actionId === action.id) ?? null;
-            const rowView = mapLegacyActionToPhase(action, exec, getOverride(action.id));
+          {approvalRows.map((row, index) => {
+            const { action, product, task } = row;
             return (
               <button
                 key={action.id}
@@ -169,7 +161,7 @@ export function ApprovalCenter() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-xs font-mono text-gray-500">{action.id}</span>
-                      <TaskStateBadge phase={rowView.phase} className="shrink-0" />
+                      <TaskStateBadge phase={task.status} className="shrink-0" />
                       {action.riskLevel === 'high' && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-50 text-red-700 text-xs rounded">
                           高风险
@@ -204,7 +196,7 @@ export function ApprovalCenter() {
                 {/* Time */}
                 <div className="flex items-center gap-1 text-xs text-gray-500 mt-2">
                   <Clock className="w-3 h-3" />
-                  {action.createdAt}
+                  {task.updatedAt}
                 </div>
               </button>
             );
@@ -217,19 +209,19 @@ export function ApprovalCenter() {
             <div>
               <div className="text-gray-600 mb-1">高风险</div>
               <div className="font-semibold text-red-600">
-                {pendingActions.filter(a => a.riskLevel === 'high').length}
+                {approvalRows.filter((row) => row.action.riskLevel === 'high').length}
               </div>
             </div>
             <div>
               <div className="text-gray-600 mb-1">中风险</div>
               <div className="font-semibold text-orange-600">
-                {pendingActions.filter(a => a.riskLevel === 'medium').length}
+                {approvalRows.filter((row) => row.action.riskLevel === 'medium').length}
               </div>
             </div>
             <div>
               <div className="text-gray-600 mb-1">低风险</div>
               <div className="font-semibold text-green-600">
-                {pendingActions.filter(a => a.riskLevel === 'low').length}
+                {approvalRows.filter((row) => row.action.riskLevel === 'low').length}
               </div>
             </div>
           </div>
@@ -247,16 +239,12 @@ export function ApprovalCenter() {
             当前是经营上的「动作评审」环节：确认推荐打法是否放行。放行后请到「执行与结果」看落地进度，再到回放里对照指标；收尾时可沉淀复盘形成经验。
           </p>
 
-          {selectedTaskView ? (
+          {selectedTask && selectedAction ? (
             <TaskFlowSidePanel
-              view={selectedTaskView}
+              task={selectedTask}
               actionId={selectedAction.id}
               productId={selectedAction.productId}
-              onApprovalCta={(cta) => {
-                if (cta === 'submit_approval') handleApprove();
-                else if (cta === 'reject') handleReject();
-                else if (cta === 'defer') handleDefer();
-              }}
+              showActions={false}
             />
           ) : null}
 
@@ -482,13 +470,7 @@ export function ApprovalCenter() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-gray-700">新主图文件</div>
-                      <button 
-                        onClick={() => setShowParamsModal(true)}
-                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                      >
-                        <Settings className="w-4 h-4" />
-                        配置
-                      </button>
+                      <span className="text-sm text-blue-600">按当前推荐参数推进</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-gray-700">A/B 测试流量比例</div>
@@ -538,53 +520,16 @@ export function ApprovalCenter() {
           </div>
 
           {/* Approval Actions */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                审批备注（可选）
-              </label>
-              <textarea
-                value={approvalNote}
-                onChange={(e) => setApprovalNote(e.target.value)}
-                placeholder="添加审批意见或备注..."
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={3}
-              />
-            </div>
-
-            <div className="grid grid-cols-4 gap-3">
-              <button
-                onClick={handleApprove}
-                className="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 font-medium"
-              >
-                <ThumbsUp className="w-5 h-5" />
-                批准执行
-              </button>
-              
-              <button
-                onClick={() => setShowParamsModal(true)}
-                className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 font-medium"
-              >
-                <Settings className="w-5 h-5" />
-                修改参数
-              </button>
-              
-              <button
-                onClick={handleDefer}
-                className="px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 font-medium"
-              >
-                <PauseCircle className="w-5 h-5" />
-                延后处理
-              </button>
-              
-              <button
-                onClick={handleReject}
-                className="px-4 py-3 border-2 border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition-colors flex items-center justify-center gap-2 font-medium"
-              >
-                <ThumbsDown className="w-5 h-5" />
-                驳回
-              </button>
-            </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <TaskActionPanel
+              task={selectedTask}
+              actionId={selectedAction.id}
+              productId={selectedAction.productId}
+              detailHref={`/products/${selectedProduct.id}?focus=actions`}
+              source="approval_center"
+              showTimeline={false}
+              title="拍板与处理"
+            />
           </div>
         </div>
       </div>
@@ -674,26 +619,12 @@ export function ApprovalCenter() {
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
             <div className="flex items-center gap-2">
               <History className="w-5 h-5 text-gray-600" />
-              <h3 className="font-semibold text-gray-900">审批历史</h3>
+              <h3 className="font-semibold text-gray-900">拍板与推进记录</h3>
             </div>
           </div>
           
           <div className="p-6">
-            <div className="space-y-3">
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="w-4 h-4 text-gray-600" />
-                  <div className="text-sm font-medium text-gray-900">待审批</div>
-                </div>
-                <div className="text-xs text-gray-600">
-                  {selectedAction.createdAt} 由系统自动提交
-                </div>
-              </div>
-
-              <div className="text-center py-4 text-sm text-gray-500">
-                暂无其他审批记录
-              </div>
-            </div>
+            <TaskTimelineFeed task={selectedTask} title="拍板时间线" className="border-0 shadow-none" />
           </div>
         </div>
 
@@ -780,78 +711,6 @@ export function ApprovalCenter() {
         onClose={() => setFlowSupportOpen(false)}
         flowBundle={approvalResolved.flowBundle}
       />
-
-      {showParamsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowParamsModal(false)} />
-          <div className="relative bg-white rounded-lg shadow-xl w-[500px] max-h-[80vh] overflow-auto">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">修改执行参数</h3>
-              <button
-                onClick={() => setShowParamsModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  A/B 测试流量比例
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option>50:50（推荐）</option>
-                  <option>30:70（保守）</option>
-                  <option>70:30（激进）</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  测试时长（天）
-                </label>
-                <input
-                  type="number"
-                  defaultValue={5}
-                  min={3}
-                  max={14}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  自动决策阈值
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option>CTR 提升 &gt; 20%（推荐）</option>
-                  <option>CTR 提升 &gt; 30%（保守）</option>
-                  <option>CTR 提升 &gt; 10%（激进）</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowParamsModal(false);
-                  handleApprove();
-                }}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                确认并批准
-              </button>
-              <button
-                onClick={() => setShowParamsModal(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

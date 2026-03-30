@@ -44,9 +44,9 @@ export function FlowSupportDrawer({
       <div className="absolute right-0 top-0 bottom-0 w-full max-w-[520px] bg-white shadow-xl flex flex-col border-l border-gray-200">
         <div className="h-14 border-b border-gray-200 flex items-center justify-between px-4 shrink-0">
           <div>
-            <div className="text-xs text-gray-500">Flow Support</div>
+            <div className="text-xs text-gray-500">处理支持</div>
             <div className="text-sm font-semibold text-gray-900">
-              流程与执行支持 · {phaseName}
+              处理提醒与推进支持 · {phaseName}
             </div>
           </div>
           <button
@@ -64,7 +64,7 @@ export function FlowSupportDrawer({
 
           <section className="rounded-lg border border-gray-200 bg-white p-3">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-              当前阶段说明
+              当前关注点
             </h3>
             <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
               {model.stageSummary}
@@ -74,7 +74,7 @@ export function FlowSupportDrawer({
           {model.deliverableHints.length > 0 && (
             <section className="rounded-lg border border-gray-200 bg-white p-3">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                本阶段输出物
+                这一步要准备什么
               </h3>
               <ul className="space-y-2">
                 {model.deliverableHints.map((d) => (
@@ -90,7 +90,7 @@ export function FlowSupportDrawer({
           {model.roleHints.length > 0 && (
             <section className="rounded-lg border border-gray-200 bg-white p-3">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                责任角色
+                谁来跟
               </h3>
               <ul className="space-y-2">
                 {model.roleHints.map((r) => (

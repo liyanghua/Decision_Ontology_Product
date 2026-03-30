@@ -1,20 +1,25 @@
 /**
  * 经营搭档首页数据层：默认由 liveCatalog 驱动，后续可整体替换为 HTTP 实现，保持函数签名与 VM 类型不变。
  */
-import type { Product } from '../mockData';
+import type { Action, Product } from '../mockData';
 import {
   listProducts,
-  actions,
   highValueLeads,
   todayFocusProducts,
   goalSummary,
 } from '../liveCatalog';
+import {
+  listOperatorTaskRows,
+  type OperatorTask,
+  type TaskFlowDemoOverride,
+} from '../taskFlow';
 import {
   appendFromHome,
   summarizeLeadWithoutProduct,
   summarizeProduct,
   type OperatorObjectSummary,
 } from './operatorObjectSummary';
+import type { RecentCompletedTask } from '../reviewLedgerTypes';
 
 export type { OperatorObjectSummary, OperatorObjectType } from './operatorObjectSummary';
 
@@ -75,6 +80,7 @@ export type InProgressTaskVM = {
   context: string;
   status: InProgressTaskStatus;
   statusLabel: string;
+  task: OperatorTask;
   hrefPrimary: string;
   productId?: string;
   actionId?: string;
@@ -93,11 +99,17 @@ export type SuggestedActionVM = {
   title: string;
   detail?: string;
   priorityHint?: string;
+  task: OperatorTask;
   productId: string;
   actionId?: string;
   detailHref: string;
   processHref: string;
   primaryObject: OperatorObjectSummary;
+};
+
+export type RecentCompletedTaskVM = RecentCompletedTask & {
+  task: OperatorTask;
+  statusLabel: string;
 };
 
 export type OperatorHomeDemoModel = {
@@ -110,12 +122,15 @@ export type OperatorHomeDemoModel = {
   inProgressTasks: InProgressTaskVM[];
   memory: MemoryProfileVM;
   suggestedActions: SuggestedActionVM[];
+  recentCompletedTasks: RecentCompletedTaskVM[];
 };
 
 export type OperatorHomeModelResult = {
   model: OperatorHomeDemoModel;
   isEmpty: boolean;
 };
+
+type TaskOverrideGetter = (actionId: string) => TaskFlowDemoOverride | undefined;
 
 function formatWan(n: number): string {
   return `¥${(n / 10000).toFixed(n >= 100_000 ? 0 : 1)}万`;
@@ -165,7 +180,9 @@ export function getTodaySummary(): TodaySummaryVM {
   const problemSkuCount = plist.filter((p) => productProblemCount(p) > 0).length;
 
   const pendingProductIds = new Set(
-    actions.filter((a) => a.status === 'pending').map((a) => a.productId),
+    listOperatorTaskRows()
+      .filter((row) => row.task.status === 'pending_decision')
+      .map((row) => row.action.productId),
   );
   const sorted = [...plist].sort((a, b) => {
     const aw = pendingProductIds.has(a.id) ? 1 : 0;
@@ -305,7 +322,7 @@ export function getQuickTasks(): QuickTaskVM[] {
 }
 
 function actionToPrimaryObject(
-  a: (typeof actions)[0],
+  a: Action,
   pmap: Map<string, Product>,
   statusLabel: string,
 ): OperatorObjectSummary {
@@ -336,17 +353,28 @@ function actionToPrimaryObject(
 
 function pushInProgress(
   acc: InProgressTaskVM[],
-  a: (typeof actions)[0],
-  status: InProgressTaskStatus,
+  a: Action,
+  task: OperatorTask,
   pmap: Map<string, Product>,
 ) {
+  const status = task.status === 'pending_decision'
+    ? 'pending_confirm'
+    : task.status === 'completed'
+      ? 'completed'
+      : 'in_progress';
   const stLabel =
-    status === 'pending_confirm' ? '待确认' : status === 'in_progress' ? '进行中' : '已完成';
+    task.statusLabel;
   let hrefPrimary: string;
-  if (status === 'pending_confirm') {
+  if (task.status === 'pending_decision') {
     hrefPrimary = appendFromHome(`/approvals?actionId=${encodeURIComponent(a.id)}`);
-  } else if (status === 'in_progress') {
-    hrefPrimary = appendFromHome(`/products/${a.productId}`);
+  } else if (
+    task.status === 'approved' ||
+    task.status === 'executing' ||
+    task.status === 'blocked' ||
+    task.status === 'failed' ||
+    task.status === 'needs_takeover'
+  ) {
+    hrefPrimary = appendFromHome('/execution');
   } else {
     hrefPrimary = appendFromHome(`/products/${a.productId}?focus=actions`);
   }
@@ -356,39 +384,101 @@ function pushInProgress(
     context: `${a.productName} · ${a.type}`,
     status,
     statusLabel: stLabel,
+    task,
     hrefPrimary,
     productId: a.productId,
     actionId: a.id,
-    primaryObject: actionToPrimaryObject(a, pmap, stLabel),
+    primaryObject: actionToPrimaryObject(a, pmap, task.statusLabel),
   });
 }
 
-export function getInProgressTasks(): InProgressTaskVM[] {
+export function getInProgressTasks(getOverride?: TaskOverrideGetter): InProgressTaskVM[] {
   const pmap = productMap();
   const acc: InProgressTaskVM[] = [];
-  const pend = actions.filter((a) => a.status === 'pending');
-  const run = actions.filter((a) => a.status === 'running');
-  const done = actions.filter((a) => a.status === 'completed');
-  pend.slice(0, 2).forEach((a) => pushInProgress(acc, a, 'pending_confirm', pmap));
-  run.slice(0, 2).forEach((a) => pushInProgress(acc, a, 'in_progress', pmap));
-  done.slice(0, 2).forEach((a) => pushInProgress(acc, a, 'completed', pmap));
+  const rank: Record<OperatorTask['status'], number> = {
+    failed: 0,
+    needs_takeover: 1,
+    blocked: 2,
+    waiting_input: 3,
+    diagnosing: 4,
+    pending_decision: 5,
+    approved: 6,
+    executing: 7,
+    completed: 8,
+    draft: 9,
+    archived: 10,
+  };
+
+  const rows = listOperatorTaskRows(getOverride)
+    .filter(({ task }) =>
+      [
+        'pending_decision',
+        'approved',
+        'executing',
+        'blocked',
+        'failed',
+        'needs_takeover',
+        'waiting_input',
+        'diagnosing',
+        'completed',
+      ].includes(task.status),
+    )
+    .sort((a, b) => {
+      if (rank[a.task.status] !== rank[b.task.status]) {
+        return rank[a.task.status] - rank[b.task.status];
+      }
+      return a.task.updatedAt < b.task.updatedAt ? 1 : a.task.updatedAt > b.task.updatedAt ? -1 : 0;
+    })
+    .slice(0, 6);
+
+  rows.forEach(({ action, task }) => pushInProgress(acc, action, task, pmap));
   return acc;
 }
 
-export function getSuggestedActions(): SuggestedActionVM[] {
+export function getSuggestedActions(getOverride?: TaskOverrideGetter): SuggestedActionVM[] {
   const pmap = productMap();
-  const pend = actions.filter((a) => a.status === 'pending').slice(0, 6);
-  return pend.map((a) => ({
+  const pend = listOperatorTaskRows(getOverride)
+    .filter(({ task }) => task.status === 'pending_decision')
+    .slice(0, 6);
+  return pend.map(({ action: a, task }) => ({
     id: a.id,
     title: a.name,
     detail: a.reason,
     priorityHint: a.riskLevel === 'high' ? '高' : a.riskLevel === 'medium' ? '中' : '低',
+    task,
     productId: a.productId,
     actionId: a.id,
     detailHref: appendFromHome(`/products/${a.productId}?focus=actions`),
     processHref: appendFromHome(`/approvals?actionId=${encodeURIComponent(a.id)}`),
-    primaryObject: actionToPrimaryObject(a, pmap, '待审批'),
+    primaryObject: actionToPrimaryObject(a, pmap, task.statusLabel),
   }));
+}
+
+export function getRecentCompletedTasks(
+  getOverride?: TaskOverrideGetter,
+): RecentCompletedTaskVM[] {
+  return listOperatorTaskRows(getOverride)
+    .filter(({ task }) => task.status === 'completed')
+    .slice(0, 4)
+    .map(({ action, task }) => ({
+      id: action.id,
+      title: action.name,
+      productName: action.productName,
+      completedAt: task.updatedAt,
+      href: action.productId
+        ? appendFromHome(`/products/${action.productId}?focus=actions`)
+        : appendFromHome('/execution'),
+      productId: action.productId || undefined,
+      actionId: action.id,
+      task,
+      statusLabel: task.statusLabel,
+      taskRefs: {
+        actionId: action.id,
+        executionId: task.sourceRefs.executionId,
+        productId: action.productId || undefined,
+        taskId: task.id,
+      },
+    }));
 }
 
 export function getMemoryProfile(): MemoryProfileVM {
@@ -434,11 +524,12 @@ function emptyModel(): OperatorHomeDemoModel {
     inProgressTasks: [],
     memory: getMemoryProfile(),
     suggestedActions: [],
+    recentCompletedTasks: [],
   };
 }
 
 /** 组装首页模型（推荐给页面的唯一入口之一） */
-export function loadOperatorHomePageModel(): OperatorHomeModelResult {
+export function loadOperatorHomePageModel(getOverride?: TaskOverrideGetter): OperatorHomeModelResult {
   if (getOperatorHomeEmpty()) {
     return { isEmpty: true, model: emptyModel() };
   }
@@ -452,18 +543,19 @@ export function loadOperatorHomePageModel(): OperatorHomeModelResult {
       summary: getTodaySummary(),
       opportunityRiskCards: getOpportunityRiskCards(),
       quickTasks: getQuickTasks(),
-      inProgressTasks: getInProgressTasks(),
+      inProgressTasks: getInProgressTasks(getOverride),
       memory: getMemoryProfile(),
-      suggestedActions: getSuggestedActions(),
+      suggestedActions: getSuggestedActions(getOverride),
+      recentCompletedTasks: getRecentCompletedTasks(getOverride),
     },
   };
 }
 
 /** @deprecated 与 loadOperatorHomePageModel 等价 */
-export function buildOperatorHomeModel(): OperatorHomeModelResult {
-  return loadOperatorHomePageModel();
+export function buildOperatorHomeModel(getOverride?: TaskOverrideGetter): OperatorHomeModelResult {
+  return loadOperatorHomePageModel(getOverride);
 }
 
-export function buildOperatorHomeDemoData(): OperatorHomeDemoModel {
-  return loadOperatorHomePageModel().model;
+export function buildOperatorHomeDemoData(getOverride?: TaskOverrideGetter): OperatorHomeDemoModel {
+  return loadOperatorHomePageModel(getOverride).model;
 }

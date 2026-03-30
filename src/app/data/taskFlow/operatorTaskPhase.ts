@@ -1,13 +1,4 @@
-/** 前台统一任务相位（与 legacy Action/Execution 映射后的最小闭集） */
-export type OperatorTaskPhase =
-  | 'draft'
-  | 'waiting_input'
-  | 'diagnosing'
-  | 'pending_decision'
-  | 'approved'
-  | 'executing'
-  | 'blocked'
-  | 'failed'
-  | 'needs_takeover'
-  | 'completed'
-  | 'archived';
+import type { TaskStatus } from './taskTypes';
+
+/** 兼容旧命名：OperatorTaskPhase 现已与 TaskStatus 同义。 */
+export type OperatorTaskPhase = TaskStatus;
