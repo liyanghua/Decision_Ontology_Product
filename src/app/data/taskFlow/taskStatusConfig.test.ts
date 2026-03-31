@@ -28,6 +28,9 @@ describe('TASK_STATUS_CONFIG', () => {
       expect(config.borderClass.length).toBeGreaterThan(0);
       expect(config.nextHintTemplate.length).toBeGreaterThan(0);
       expect(Array.isArray(config.availableActions)).toBe(true);
+      expect(config.availableActions.length).toBeGreaterThan(0);
+      expect(config.primaryAction == null || config.availableActions).toContain(config.primaryAction);
+      expect(config.secondaryActions.length).toBeLessThanOrEqual(2);
       expect(typeof config.allowTakeover).toBe('boolean');
       expect(typeof config.allowRetry).toBe('boolean');
     }

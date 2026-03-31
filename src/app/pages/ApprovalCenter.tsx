@@ -13,9 +13,13 @@ import {
   ChevronRight,
   Target,
   Zap,
+  ArrowRight,
 } from 'lucide-react';
 import { products, strategies } from '../data/liveCatalog';
+import { buildJourneyLinks } from '../data/operatorJourney';
 import { listOperatorTaskRows } from '../data/taskFlow';
+import { OperatorJourneyBar } from '../components/operatorJourney/OperatorJourneyBar';
+import { useOperatorJourney } from '../contexts/OperatorJourneyContext';
 import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
 import { TaskActionPanel } from '../components/taskFlow/TaskActionPanel';
 import { TaskFlowSidePanel } from '../components/taskFlow/TaskFlowSidePanel';
@@ -28,35 +32,45 @@ import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
 
 export function ApprovalCenter() {
   const { getOverride } = useTaskFlowOverrides();
+  const { setActiveAction, visitStep } = useOperatorJourney();
   const [searchParams] = useSearchParams();
+  const requestedActionId = searchParams.get('actionId')?.trim() || null;
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
-  const approvalRows = useMemo(
+  const allRows = useMemo(
     () =>
       listOperatorTaskRows(getOverride)
         .map((row) => {
           const product = products.find((p) => p.id === row.action.productId) ?? null;
           return { ...row, product };
-        })
-        .filter((row) => row.task.status === 'pending_decision'),
+        }),
     [getOverride],
+  );
+  const approvalRows = useMemo(
+    () => allRows.filter((row) => row.task.status === 'pending_decision'),
+    [allRows],
+  );
+  const resolvedJourneyRow = useMemo(
+    () => (requestedActionId ? allRows.find((row) => row.action.id === requestedActionId) ?? null : null),
+    [allRows, requestedActionId],
   );
 
   useEffect(() => {
-    const aid = searchParams.get('actionId')?.trim();
-    if (aid && approvalRows.some((row) => row.action.id === aid)) {
-      setSelectedActionId(aid);
+    if (requestedActionId && approvalRows.some((row) => row.action.id === requestedActionId)) {
+      setSelectedActionId(requestedActionId);
     }
-  }, [approvalRows, searchParams]);
+  }, [approvalRows, requestedActionId]);
   useEffect(() => {
     if (approvalRows.length === 0) {
-      setSelectedActionId(null);
+      if (!requestedActionId) {
+        setSelectedActionId(null);
+      }
       return;
     }
     if (selectedActionId && approvalRows.some((row) => row.action.id === selectedActionId)) {
       return;
     }
     setSelectedActionId(approvalRows[0].action.id);
-  }, [approvalRows, selectedActionId]);
+  }, [approvalRows, requestedActionId, selectedActionId]);
   const [flowSupportOpen, setFlowSupportOpen] = useState(false);
 
   const approvalSopPhase = useMemo(
@@ -71,13 +85,37 @@ export function ApprovalCenter() {
     [approvalRows.length],
   );
 
-  const selectedRow = approvalRows.find((row) => row.action.id === selectedActionId) ?? null;
+  const selectedRow =
+    approvalRows.find((row) => row.action.id === selectedActionId) ??
+    resolvedJourneyRow ??
+    null;
   const selectedAction = selectedRow?.action ?? null;
   const selectedTask = selectedRow?.task ?? null;
   const selectedProduct = selectedRow?.product ?? null;
+  const journeyLinks = useMemo(
+    () =>
+      buildJourneyLinks({
+        actionId: selectedAction?.id,
+        productId: selectedAction?.productId,
+      }),
+    [selectedAction?.id, selectedAction?.productId],
+  );
   const relatedStrategy = selectedAction ? strategies[selectedAction.productId as keyof typeof strategies]?.find(
     s => s.id === selectedAction.strategyId
   ) : null;
+
+  useEffect(() => {
+    if (!selectedAction) return;
+    setActiveAction({
+      actionId: selectedAction.id,
+      productId: selectedAction.productId || undefined,
+    });
+    visitStep({
+      actionId: selectedAction.id,
+      productId: selectedAction.productId || undefined,
+      step: 'decision',
+    });
+  }, [selectedAction, setActiveAction, visitStep]);
 
   const approvalResolved = useMemo(() => {
     if (!selectedAction || !selectedProduct) {
@@ -102,13 +140,13 @@ export function ApprovalCenter() {
       <div className="h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <div className="text-lg font-medium text-gray-900 mb-2">暂无待审批动作</div>
-          <div className="text-sm text-gray-600 mb-6">所有动作已处理完成</div>
+          <div className="text-lg font-medium text-gray-900 mb-2">这轮待拍板动作已处理完</div>
+          <div className="text-sm text-gray-600 mb-6">可以继续去看推进结果，或者回结果复盘做前后对照。</div>
           <Link
-            to="/products"
+            to={journeyLinks.execution}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
-            返回商品操盘台
+            去推进结果
           </Link>
         </div>
       </div>
@@ -118,20 +156,10 @@ export function ApprovalCenter() {
   return (
     <div className="h-screen flex overflow-hidden bg-gray-50">
       {/* Left: Action Queue */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-72 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-900 mb-1">待审批动作</h2>
-          <div className="text-sm text-gray-600">{approvalRows.length} 个待处理</div>
-        </div>
-
-        {/* Filters */}
-        <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
-          <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option>全部风险等级</option>
-            <option>高风险优先</option>
-            <option>中风险</option>
-            <option>低风险</option>
-          </select>
+          <h2 className="font-semibold text-gray-900 mb-1">待拍板队列</h2>
+          <div className="text-sm text-gray-600">{approvalRows.length} 条推荐打法等你放行</div>
         </div>
 
         {/* Action List */}
@@ -203,41 +231,52 @@ export function ApprovalCenter() {
           })}
         </div>
 
-        {/* Summary */}
-        <div className="px-6 py-3 border-t border-gray-200 bg-gray-50">
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <div>
-              <div className="text-gray-600 mb-1">高风险</div>
-              <div className="font-semibold text-red-600">
-                {approvalRows.filter((row) => row.action.riskLevel === 'high').length}
-              </div>
-            </div>
-            <div>
-              <div className="text-gray-600 mb-1">中风险</div>
-              <div className="font-semibold text-orange-600">
-                {approvalRows.filter((row) => row.action.riskLevel === 'medium').length}
-              </div>
-            </div>
-            <div>
-              <div className="text-gray-600 mb-1">低风险</div>
-              <div className="font-semibold text-green-600">
-                {approvalRows.filter((row) => row.action.riskLevel === 'low').length}
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Middle: Action Details */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="max-w-[900px] mx-auto space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="text-sm font-medium text-slate-500">动作拍板</div>
+                <h1 className="mt-2 text-2xl font-semibold text-slate-900">先确认这条打法要不要放行</h1>
+                <p className="mt-2 text-sm leading-7 text-slate-600">
+                  这里只做一件事，判断这条推荐打法是否值得往下推。拍完后，直接去推进结果看落地情况，再到结果复盘看前后变化。
+                </p>
+              </div>
+              <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950">
+                当前还有 <span className="font-semibold">{approvalRows.length}</span> 条待拍板动作
+              </div>
+            </div>
+          </div>
+
           <SopFlowCompactBar
             stageKey={approvalSopPhase}
             onOpenFlow={() => setFlowSupportOpen(true)}
           />
-          <p className="text-xs text-gray-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-            当前是经营上的「动作评审」环节：确认推荐打法是否放行。放行后请到「执行与结果」看落地进度，再到回放里对照指标；收尾时可沉淀复盘形成经验。
-          </p>
+          {selectedTask && selectedAction ? (
+            <OperatorJourneyBar
+              task={selectedTask}
+              actionId={selectedAction.id}
+              productId={selectedAction.productId}
+            />
+          ) : null}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-sm font-medium text-slate-900">当前主线任务</div>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              看清这条动作为什么值得推、风险在哪里、拍完之后去哪；放行后直接去推进结果，别让主线停在这里。
+            </p>
+            <div className="mt-3 inline-flex items-center gap-2 text-xs text-slate-500">
+              <span>{selectedProduct.name}</span>
+              <span>·</span>
+              <span>{selectedTask?.updatedAt}</span>
+              <span>·</span>
+              <span>
+                {selectedTask?.status === 'pending_decision' ? '拍完下一站：推进结果' : '主线下一站：推进结果'}
+              </span>
+            </div>
+          </div>
 
           {selectedTask && selectedAction ? (
             <TaskFlowSidePanel
@@ -252,6 +291,7 @@ export function ApprovalCenter() {
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
+                <div className="text-xs font-medium text-slate-500 mb-2">为什么现在拍这条</div>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-sm font-mono text-gray-500">{selectedAction.id}</span>
                   {selectedAction.riskLevel === 'high' && (
@@ -278,12 +318,17 @@ export function ApprovalCenter() {
                 </div>
 
                 <h1 className="text-2xl font-semibold text-gray-900 mb-2">{selectedAction.name}</h1>
-                
+
                 <div className="flex items-center gap-4 text-sm text-gray-600">
                   <Link to={`/products/${selectedProduct.id}`} className="hover:text-blue-600 flex items-center gap-1">
                     {selectedProduct.name} ({selectedProduct.id})
                     <ChevronRight className="w-4 h-4" />
                   </Link>
+                </div>
+
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  放行后直接去推进结果看落地进展
                 </div>
               </div>
 

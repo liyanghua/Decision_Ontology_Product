@@ -56,7 +56,7 @@ export function TodaySummaryPanel({ data, status = 'normal' }: TodaySummaryPanel
               {data.riskCount} 条关键风险
             </Badge>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/today">今日操盘台</Link>
+              <Link to="/today">查看更多盘面</Link>
             </Button>
           </div>
         </div>
@@ -83,6 +83,18 @@ export function TodaySummaryPanel({ data, status = 'normal' }: TodaySummaryPanel
             <div className="text-sm font-medium text-slate-900 leading-snug">{data.headline}</div>
           </div>
         </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>目标完成进度</span>
+            <span>{data.progressPct}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all"
+              style={{ width: `${Math.min(100, data.progressPct)}%` }}
+            />
+          </div>
+        </div>
         <p className="text-sm text-slate-600 leading-relaxed border-l-2 border-blue-200 pl-3">
           {data.subline}
         </p>
@@ -101,12 +113,6 @@ export function TodaySummaryPanel({ data, status = 'normal' }: TodaySummaryPanel
             </ul>
           </div>
         ) : null}
-        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-          <div
-            className="h-full rounded-full bg-blue-600 transition-all"
-            style={{ width: `${Math.min(100, data.progressPct)}%` }}
-          />
-        </div>
       </CardContent>
     </Card>
   );

@@ -39,9 +39,9 @@ export function QuickTaskGrid({ tasks, status = 'normal' }: QuickTaskGridProps) 
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <LayoutGrid className="w-4 h-4 text-slate-600" />
-          立即行动
+          更多视角
         </CardTitle>
-        <CardDescription>与演示主线一致：先进诊断，再跟机会，落地后看结果对比。</CardDescription>
+        <CardDescription>这些入口放在主线之后，用来补看更多盘面和辅助信息。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         {status === 'loading'

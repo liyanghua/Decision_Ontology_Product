@@ -1,4 +1,5 @@
 import type { Action, Execution, ExecutionLog } from '../mockData';
+import { buildJourneyLinks } from '../operatorJourney';
 import { TASK_STATUS_CONFIG, formatNextHint } from './taskStatusConfig';
 import type {
   ApprovalDecision,
@@ -7,6 +8,7 @@ import type {
   TakeoverAction,
   TaskAction,
   TaskFlowDemoOverride,
+  TaskRouteHint,
   TaskStatus,
   TaskTimelineItem,
   TaskTimelineTone,
@@ -461,6 +463,50 @@ function filterActions(actions: TaskAction[], canRetry: boolean, canTakeover: bo
   });
 }
 
+function derivePrimaryAction(
+  status: TaskStatus,
+  actions: TaskAction[],
+): TaskAction | undefined {
+  const preferred = TASK_STATUS_CONFIG[status].primaryAction;
+  if (preferred && actions.includes(preferred)) return preferred;
+  return actions[0];
+}
+
+function deriveSecondaryActions(
+  status: TaskStatus,
+  actions: TaskAction[],
+  primaryAction?: TaskAction,
+): TaskAction[] {
+  const preferred = TASK_STATUS_CONFIG[status].secondaryActions.filter((action) => actions.includes(action));
+  const withoutPrimary = preferred.filter((action) => action !== primaryAction);
+  const fallback = actions.filter((action) => action !== primaryAction && !withoutPrimary.includes(action));
+  return [...withoutPrimary, ...fallback].slice(0, 2);
+}
+
+function buildNextRouteHint(action: Action, status: TaskStatus): TaskRouteHint | undefined {
+  const links = buildJourneyLinks({
+    actionId: action.id,
+    productId: action.productId || undefined,
+  });
+
+  if (status === 'draft' || status === 'waiting_input' || status === 'diagnosing' || status === 'archived') {
+    return { label: '进入商品诊断', href: links.diagnosis };
+  }
+  if (status === 'pending_decision') {
+    return { label: '去拍板', href: links.approvals };
+  }
+  if (status === 'approved') {
+    return { label: '去推进', href: links.execution };
+  }
+  if (status === 'executing' || status === 'blocked' || status === 'failed' || status === 'needs_takeover') {
+    return { label: '看推进结果', href: links.execution };
+  }
+  if (status === 'completed') {
+    return { label: '看结果复盘', href: links.replay };
+  }
+  return undefined;
+}
+
 export function buildOperatorTask(
   action: Action,
   execution?: Execution | null,
@@ -497,6 +543,9 @@ export function buildOperatorTask(
     demo?.retryCount ?? 0,
     (demo?.recoveryActions ?? []).filter((item) => item.kind === 'retry').length,
   );
+  const availableActions = filterActions(config.availableActions, canRetry, canTakeover);
+  const primaryAction = derivePrimaryAction(status, availableActions);
+  const secondaryActions = deriveSecondaryActions(status, availableActions, primaryAction);
 
   return {
     id: action.id,
@@ -506,7 +555,9 @@ export function buildOperatorTask(
     status,
     statusLabel: config.labelZh,
     badgeTone: config.tone,
-    availableActions: filterActions(config.availableActions, canRetry, canTakeover),
+    availableActions,
+    primaryAction,
+    secondaryActions,
     nextStepHint: deriveNextStepHint(
       status,
       action,
@@ -515,6 +566,7 @@ export function buildOperatorTask(
       latestApproval,
       latestRecovery,
     ),
+    nextRouteHint: buildNextRouteHint(action, status),
     blockReason:
       demo?.blockReasonOverride ||
       deriveBlockReason(

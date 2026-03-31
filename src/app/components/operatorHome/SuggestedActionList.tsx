@@ -28,7 +28,7 @@ export function SuggestedActionList({
           <ClipboardCheck className="w-4 h-4 text-slate-700" />
           今日建议动作
         </CardTitle>
-        <CardDescription>待经营拍板的动作；先看诊断里的打法，再在抽屉里直接去推进。</CardDescription>
+        <CardDescription>已经形成打法、等待拍板的动作。先看一眼诊断，再把最重要的一条推进下去。</CardDescription>
       </CardHeader>
       <CardContent>
         {status === 'loading' ? (
@@ -72,11 +72,11 @@ export function SuggestedActionList({
                         type="button"
                         onClick={() => onOpenTask(a)}
                       >
-                        去推进
+                        去拍板
                       </Button>
                     ) : (
                       <Button size="sm" className="text-xs h-8" asChild>
-                        <Link to={a.processHref}>去推进</Link>
+                        <Link to={a.processHref}>去拍板</Link>
                       </Button>
                     )}
                   </div>

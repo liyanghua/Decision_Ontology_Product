@@ -25,6 +25,7 @@ export type TaskAction =
   | 'retry'
   | 'takeover'
   | 'mark_completed'
+  | 'create_review'
   | 'view_diagnosis'
   | 'archive';
 
@@ -114,6 +115,11 @@ export type TaskSourceRefs = {
   productId?: string;
 };
 
+export type TaskRouteHint = {
+  label: string;
+  href: string;
+};
+
 export type TaskFlowDemoOverride = {
   phaseOverride?: TaskStatus;
   takeover?: boolean;
@@ -137,7 +143,10 @@ export type OperatorTask = {
   statusLabel: string;
   badgeTone: TaskBadgeTone;
   availableActions: TaskAction[];
+  primaryAction?: TaskAction;
+  secondaryActions: TaskAction[];
   nextStepHint: string;
+  nextRouteHint?: TaskRouteHint;
   blockReason: string;
   ownerLabel: string;
   updatedAt: string;

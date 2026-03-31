@@ -73,8 +73,8 @@ export function FlowSupportDrawer({
 
           {model.deliverableHints.length > 0 && (
             <section className="rounded-lg border border-gray-200 bg-white p-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                这一步要准备什么
+              <h3 className="text-xs font-semibold text-gray-500 mb-2">
+                这一步先备好什么
               </h3>
               <ul className="space-y-2">
                 {model.deliverableHints.map((d) => (
@@ -89,8 +89,8 @@ export function FlowSupportDrawer({
 
           {model.roleHints.length > 0 && (
             <section className="rounded-lg border border-gray-200 bg-white p-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                谁来跟
+              <h3 className="text-xs font-semibold text-gray-500 mb-2">
+                这一步谁来跟
               </h3>
               <ul className="space-y-2">
                 {model.roleHints.map((r) => (
@@ -105,7 +105,7 @@ export function FlowSupportDrawer({
 
           {model.executionReminders.length > 0 && (
             <section className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
-              <h3 className="text-xs font-semibold text-blue-800 uppercase tracking-wide mb-2">
+              <h3 className="text-xs font-semibold text-blue-800 mb-2">
                 执行提醒
               </h3>
               <ul className="list-disc pl-4 space-y-1 text-sm text-gray-800">
@@ -118,7 +118,7 @@ export function FlowSupportDrawer({
 
           {model.riskChecklist.length > 0 && (
             <section className="rounded-lg border border-orange-200 bg-orange-50/50 p-3">
-              <h3 className="text-xs font-semibold text-orange-900 uppercase tracking-wide mb-2">
+              <h3 className="text-xs font-semibold text-orange-900 mb-2">
                 风险检查项
               </h3>
               <ul className="list-disc pl-4 space-y-1 text-sm text-orange-950/90">
@@ -131,8 +131,8 @@ export function FlowSupportDrawer({
 
           {model.citations.length > 0 && (
             <section className="rounded-lg border border-gray-200 bg-slate-50 p-3">
-              <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                SOP 片段引用
+              <h3 className="text-xs font-semibold text-gray-600 mb-2">
+                参考片段
               </h3>
               <ul className="space-y-3">
                 {model.citations.map((c) => (

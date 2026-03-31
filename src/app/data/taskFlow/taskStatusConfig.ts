@@ -7,6 +7,8 @@ export type TaskStatusPresentation = {
   badgeClass: string;
   borderClass: string;
   availableActions: TaskAction[];
+  primaryAction?: TaskAction;
+  secondaryActions: TaskAction[];
   nextHintTemplate: string;
   allowTakeover: boolean;
   allowRetry: boolean;
@@ -20,6 +22,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-slate-100 text-slate-800 border-slate-200',
     borderClass: 'border-slate-200',
     availableActions: ['view_diagnosis', 'archive'],
+    primaryAction: 'view_diagnosis',
+    secondaryActions: ['archive'],
     nextHintTemplate: '先把「{productName}」这条动作的经营目标、影响范围和打法收完整，再决定是否推进。',
     allowTakeover: false,
     allowRetry: false,
@@ -31,6 +35,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-amber-50 text-amber-900 border-amber-200',
     borderClass: 'border-amber-200',
     availableActions: ['fill_inputs', 'view_diagnosis', 'defer'],
+    primaryAction: 'fill_inputs',
+    secondaryActions: ['view_diagnosis', 'defer'],
     nextHintTemplate: '回到「{productName}」补齐关键指标、约束和证据包，再继续往下推。',
     allowTakeover: false,
     allowRetry: false,
@@ -42,6 +48,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-violet-50 text-violet-900 border-violet-200',
     borderClass: 'border-violet-200',
     availableActions: ['finish_diagnosis', 'view_diagnosis', 'defer'],
+    primaryAction: 'finish_diagnosis',
+    secondaryActions: ['view_diagnosis', 'defer'],
     nextHintTemplate: '先完成「{productName}」诊断收口，把问题、根因和打法拉到同一口径。',
     allowTakeover: false,
     allowRetry: false,
@@ -53,6 +61,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-orange-50 text-orange-900 border-orange-200',
     borderClass: 'border-orange-200',
     availableActions: ['submit_approval', 'reject', 'defer', 'view_diagnosis'],
+    primaryAction: 'submit_approval',
+    secondaryActions: ['defer', 'reject'],
     nextHintTemplate: '请对「{productName}」给出通过、驳回或延后意见，别让队列空等。',
     allowTakeover: false,
     allowRetry: false,
@@ -64,6 +74,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-emerald-50 text-emerald-900 border-emerald-200',
     borderClass: 'border-emerald-200',
     availableActions: ['go_execute', 'view_diagnosis', 'defer'],
+    primaryAction: 'go_execute',
+    secondaryActions: ['view_diagnosis', 'defer'],
     nextHintTemplate: '把「{productName}」排入本轮执行窗口，并约定回看节点。',
     allowTakeover: false,
     allowRetry: false,
@@ -75,6 +87,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-blue-50 text-blue-900 border-blue-200',
     borderClass: 'border-blue-200',
     availableActions: ['go_execute', 'mark_completed', 'view_diagnosis'],
+    primaryAction: 'mark_completed',
+    secondaryActions: ['view_diagnosis'],
     nextHintTemplate: '继续盯住「{productName}」的关键指标与执行回传，发现异常及时处理。',
     allowTakeover: false,
     allowRetry: false,
@@ -86,6 +100,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-rose-50 text-rose-900 border-rose-200',
     borderClass: 'border-rose-200',
     availableActions: ['takeover', 'defer', 'view_diagnosis'],
+    primaryAction: 'takeover',
+    secondaryActions: ['defer', 'view_diagnosis'],
     nextHintTemplate: '先把「{productName}」这条链路的卡点拆清，再判断是否需要人工接手。',
     allowTakeover: true,
     allowRetry: false,
@@ -97,6 +113,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-red-50 text-red-900 border-red-200',
     borderClass: 'border-red-200',
     availableActions: ['retry', 'takeover', 'view_diagnosis'],
+    primaryAction: 'retry',
+    secondaryActions: ['takeover', 'view_diagnosis'],
     nextHintTemplate: '先复盘「{productName}」这次为什么没跑通，再决定重试还是转人工接手。',
     allowTakeover: true,
     allowRetry: true,
@@ -108,6 +126,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-rose-50 text-rose-950 border-rose-300',
     borderClass: 'border-rose-300',
     availableActions: ['go_execute', 'mark_completed', 'archive', 'view_diagnosis'],
+    primaryAction: 'go_execute',
+    secondaryActions: ['mark_completed', 'archive'],
     nextHintTemplate: '由人工接手「{productName}」后，决定是回到执行还是重新拍板。',
     allowTakeover: true,
     allowRetry: true,
@@ -118,7 +138,9 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     tone: 'emerald',
     badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     borderClass: 'border-emerald-200',
-    availableActions: ['view_diagnosis', 'archive'],
+    availableActions: ['create_review', 'view_diagnosis', 'archive'],
+    primaryAction: 'create_review',
+    secondaryActions: ['view_diagnosis', 'archive'],
     nextHintTemplate: '把「{productName}」这轮结果沉淀下来，再安排下一轮推进。',
     allowTakeover: false,
     allowRetry: false,
@@ -130,6 +152,8 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, TaskStatusPresentation> = {
     badgeClass: 'bg-slate-100 text-slate-600 border-slate-200',
     borderClass: 'border-slate-200',
     availableActions: ['view_diagnosis'],
+    primaryAction: 'view_diagnosis',
+    secondaryActions: [],
     nextHintTemplate: '如果要重启「{productName}」，建议从诊断重新生成这轮动作。',
     allowTakeover: false,
     allowRetry: false,
@@ -143,13 +167,14 @@ export function formatNextHint(template: string, productName: string): string {
 export function getTaskActionLabel(action: TaskAction, status?: TaskStatus): string {
   if (action === 'fill_inputs') return '信息已补齐';
   if (action === 'finish_diagnosis') return '诊断已收口';
-  if (action === 'submit_approval') return '批准';
-  if (action === 'reject') return '驳回';
+  if (action === 'submit_approval') return '放行';
+  if (action === 'reject') return '不做了';
   if (action === 'defer') return '暂缓处理';
   if (action === 'go_execute') return '去推进';
   if (action === 'retry') return '重新执行';
   if (action === 'takeover') return '人工处理';
   if (action === 'mark_completed') return '处理完成';
+  if (action === 'create_review') return '形成经验';
   if (action === 'archive') return status === 'needs_takeover' ? '本轮收档' : '归档';
   return '看诊断里的打法';
 }

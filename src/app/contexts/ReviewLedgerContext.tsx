@@ -23,6 +23,7 @@ import {
   REVIEW_LEARNING_CANDIDATE_SEEDS,
 } from '../data/reviewLedgerData';
 import { ReviewDepositionDialog } from '../components/review/ReviewDepositionDialog';
+import { useOperatorJourney } from './OperatorJourneyContext';
 
 type LastDigest = {
   entryId: string;
@@ -52,6 +53,7 @@ function newId(prefix: 'rv' | 'lc'): string {
 }
 
 export function ReviewLedgerProvider({ children }: { children: ReactNode }) {
+  const { completeReview } = useOperatorJourney();
   const [reviewCards, setReviewCards] = useState<ReviewCard[]>(() => REVIEW_CARD_SEEDS);
   const [learningCandidates, setLearningCandidates] = useState<LearningCandidate[]>(
     () => REVIEW_LEARNING_CANDIDATE_SEEDS,
@@ -109,8 +111,14 @@ export function ReviewLedgerProvider({ children }: { children: ReactNode }) {
         inCandidatePool: reviewCard.inCandidatePool,
         at: Date.now(),
       });
+      if (reviewCard.taskRefs.actionId) {
+        completeReview({
+          actionId: reviewCard.taskRefs.actionId,
+          productId: reviewCard.taskRefs.productId,
+        });
+      }
     },
-    [prefill],
+    [completeReview, prefill],
   );
 
   const summary = useMemo(

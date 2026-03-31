@@ -43,7 +43,7 @@ export function TaskActionDrawer({
               </div>
               <SheetTitle className="mt-2 text-left text-xl text-slate-900">{task.title}</SheetTitle>
               <SheetDescription className="text-left leading-6">
-                在这里直接拍板、继续推进，或把失败任务转成人工处理，不需要切到传统审批流。
+                在这里直接继续推进、拍板放行，或把卡住的任务接过来处理，不需要跳去另一套复杂流转页。
               </SheetDescription>
             </SheetHeader>
 

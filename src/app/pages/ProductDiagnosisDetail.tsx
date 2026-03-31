@@ -29,12 +29,14 @@ import {
 import { parseImprovementActionCards } from '../data/adapters/improvementActionParse';
 import { splitInsightBullets, splitHighlightCards } from '../data/adapters/diagnosisContentParse';
 import { buildReviewPrefillFromTask } from '../data/reviewLedgerData';
+import { buildJourneyLinks } from '../data/operatorJourney';
 import { inferPhaseForContext } from '../data/sop/diagnosisFlowSkeleton';
 import { inferProblemKeyFromText, resolveKnowledgeSupport } from '../data/expertKnowledge';
 import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
 import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
 import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDrawer';
 import { StrategySupportTrigger } from '../components/knowledge/StrategySupportTrigger';
+import { OperatorJourneyBar } from '../components/operatorJourney/OperatorJourneyBar';
 import {
   linesToDiagnosisCards,
   linesToOpportunityCards,
@@ -47,19 +49,21 @@ import {
 import { DecisionCardFrame } from '../components/decisionCards/DecisionCardFrame';
 import { executions } from '../data/mockData';
 import { listOperatorTaskRows, mapLegacyActionToPhase } from '../data/taskFlow';
+import { useOperatorJourney } from '../contexts/OperatorJourneyContext';
 import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
 import { TaskActionDrawer } from '../components/taskFlow/TaskActionDrawer';
 import { TaskFlowSidePanel } from '../components/taskFlow/TaskFlowSidePanel';
 import { TaskStateBadge } from '../components/taskFlow/TaskStateBadge';
 import { useReviewLedger } from '../contexts/ReviewLedgerContext';
 import { Button } from '../components/ui/button';
-import { appendFromHome } from '../data/operatorHome/operatorObjectSummary';
 
 export function ProductDiagnosisDetail() {
   const { getOverride } = useTaskFlowOverrides();
   const { openDeposition, getLatestReview, getReviewStatus } = useReviewLedger();
+  const { setActiveAction, visitStep } = useOperatorJourney();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const actionIdFromQuery = searchParams.get('actionId')?.trim() || null;
   const { productId } = useParams();
   const statDates = productId ? (availableStatDatesByProductId[productId] ?? []) : [];
   const [selectedStatistDate, setSelectedStatistDate] = useState('');
@@ -121,6 +125,15 @@ export function ProductDiagnosisDetail() {
     },
     [getOverride, productActions, productId],
   );
+  const journeyRow = useMemo(() => {
+    if (actionIdFromQuery) {
+      return productActionRows.find((row) => row.action.id === actionIdFromQuery) ?? null;
+    }
+    if (selectedActionId) {
+      return productActionRows.find((row) => row.action.id === selectedActionId) ?? null;
+    }
+    return productActionRows[0] ?? null;
+  }, [actionIdFromQuery, productActionRows, selectedActionId]);
   const completedProductActionRows = useMemo(
     () => productActionRows.filter((row) => row.task.status === 'completed'),
     [productActionRows],
@@ -284,6 +297,26 @@ export function ProductDiagnosisDetail() {
         : undefined,
     [completedProductActionRows, getLatestReview, product],
   );
+  const journeyReviewStatus = useMemo(
+    () =>
+      journeyRow
+        ? getReviewStatus({
+            actionId: journeyRow.task.sourceRefs.actionId,
+            executionId: journeyRow.task.sourceRefs.executionId,
+            productId: journeyRow.task.sourceRefs.productId,
+            taskId: journeyRow.task.id,
+          })
+        : 'none',
+    [getReviewStatus, journeyRow],
+  );
+  const journeyLinks = useMemo(
+    () =>
+      buildJourneyLinks({
+        actionId: journeyRow?.action.id,
+        productId: productId ?? journeyRow?.action.productId,
+      }),
+    [journeyRow?.action.id, journeyRow?.action.productId, productId],
+  );
 
   const causeDecisionCards = useMemo(() => {
     if (!productId || !product || causes.length === 0) return [];
@@ -299,6 +332,25 @@ export function ProductDiagnosisDetail() {
     () => productActionRows.filter((row) => row.task.status === 'pending_decision').length,
     [productActionRows],
   );
+
+  useEffect(() => {
+    if (!actionIdFromQuery) return;
+    if (!productActionRows.some((row) => row.action.id === actionIdFromQuery)) return;
+    setSelectedActionId(actionIdFromQuery);
+  }, [actionIdFromQuery, productActionRows]);
+
+  useEffect(() => {
+    if (!journeyRow) return;
+    setActiveAction({
+      actionId: journeyRow.action.id,
+      productId: journeyRow.action.productId || productId,
+    });
+    visitStep({
+      actionId: journeyRow.action.id,
+      productId: journeyRow.action.productId || productId,
+      step: 'diagnosis',
+    });
+  }, [journeyRow, productId, setActiveAction, visitStep]);
 
   const sopFlowCtx = useMemo(
     () => ({
@@ -402,15 +454,15 @@ export function ProductDiagnosisDetail() {
           ) : null}
 
           <div className="mb-4">
-            <label className="text-xs font-medium text-gray-600 block mb-1">切换商品 goods_id</label>
+            <label className="text-xs font-medium text-gray-600 block mb-1">切换处理对象</label>
             <select
               value={productId ?? ''}
               onChange={(e) => navigate(`/products/${e.target.value}`)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {productOptions.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.id}
+                  {p.name} · {p.id}
                 </option>
               ))}
             </select>
@@ -418,15 +470,15 @@ export function ProductDiagnosisDetail() {
 
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 mb-3 space-y-2 text-xs">
             <div className="flex justify-between gap-2">
-              <span className="text-gray-500">goods_id</span>
+              <span className="text-gray-500">对象编号</span>
               <span className="font-mono text-gray-900">{diagnosisVm?.goodsId ?? product.id}</span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-gray-500">statist_date</span>
+              <span className="text-gray-500">统计日期</span>
               <span className="font-mono text-gray-900">{diagnosisVm?.statistDate ?? '—'}</span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-gray-500">diagnosis_grade</span>
+              <span className="text-gray-500">诊断等级</span>
               <span className="font-mono text-gray-900">{diagnosisVm?.diagnosis_grade || '—'}</span>
             </div>
           </div>
@@ -590,11 +642,20 @@ export function ProductDiagnosisDetail() {
             onOpenFlow={() => setFlowSupportOpen(true)}
           />
 
+          {journeyRow ? (
+            <OperatorJourneyBar
+              task={journeyRow.task}
+              actionId={journeyRow.action.id}
+              productId={productId}
+              reviewStatus={journeyReviewStatus}
+            />
+          ) : null}
+
           <div className="rounded-lg border border-slate-200 bg-slate-50/90 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-slate-700">
-              <span className="font-medium text-slate-900">演示主线 · 下一步</span>
+              <span className="font-medium text-slate-900">主线下一步</span>
               <span className="hidden sm:inline"> — </span>
-              <span className="block sm:inline mt-1 sm:mt-0">去审批放行 → 看执行进度 → 对照指标看结果。</span>
+              <span className="block sm:inline mt-1 sm:mt-0">先把这条动作拍板放行，再去看推进结果，最后回结果复盘看前后变化。</span>
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">
               <Button
@@ -603,20 +664,20 @@ export function ProductDiagnosisDetail() {
                 variant={pendingActionCount > 0 ? 'default' : 'outline'}
                 className={pendingActionCount > 0 ? '' : 'text-slate-700'}
               >
-                <Link to={appendFromHome('/approvals')}>去审批</Link>
+                <Link to={journeyLinks.approvals}>去拍板</Link>
               </Button>
               <Button asChild size="sm" variant="outline">
-                <Link to="/execution">看执行</Link>
+                <Link to={journeyLinks.execution}>看推进结果</Link>
               </Button>
               <Button asChild size="sm" variant="outline">
-                <Link to={`/replay?goodsId=${encodeURIComponent(product.id)}`}>看结果</Link>
+                <Link to={journeyLinks.replay}>看结果复盘</Link>
               </Button>
             </div>
           </div>
 
           {pendingActionCount > 0 && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-              有待经营决策的动作，建议先在「动作审批」放行或调整，再到执行页看落地。
+              这里有待经营拍板的动作，建议先放行或调整，再到推进结果里看落地。
             </p>
           )}
 
@@ -955,12 +1016,17 @@ export function ProductDiagnosisDetail() {
                             setSelectedActionId(action.id)
                           }
                         >
-                          打开推进中心
+                          继续推进
                         </Button>
                         {task.status === 'pending_decision' ? (
                           <Button variant="outline" size="sm" className="text-xs h-8" asChild>
-                            <Link to={`/approvals?actionId=${encodeURIComponent(action.id)}`}>
-                              去拍板中心
+                            <Link
+                              to={buildJourneyLinks({
+                                actionId: action.id,
+                                productId,
+                              }).approvals}
+                            >
+                              去动作拍板
                             </Link>
                           </Button>
                         ) : null}
@@ -1006,8 +1072,7 @@ export function ProductDiagnosisDetail() {
             </div>
           </div>
 
-          {diagnosisReviewPrefill &&
-          (completedProductActionRows.length > 0 || diagnosisReviewStatus !== 'none') ? (
+          {diagnosisReviewPrefill ? (
             <div className="bg-white rounded-lg border border-violet-200 overflow-hidden shadow-sm">
               <div className="px-6 py-4 bg-violet-50/90 border-b border-violet-200">
                 <div className="flex items-center gap-3">
@@ -1030,11 +1095,22 @@ export function ProductDiagnosisDetail() {
                       最近经验：{latestDiagnosisReview.lesson}
                     </p>
                   ) : null}
+                  {diagnosisReviewStatus !== 'none' ? (
+                    <p className="text-xs text-violet-800/80">
+                      演示数据中可能已有摘要，仍可再次提交，会新增一条复盘记录。
+                    </p>
+                  ) : null}
                 </div>
-                {diagnosisReviewStatus === 'none' ? (
+                <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                  {diagnosisReviewStatus !== 'none' ? (
+                    <span className="inline-flex items-center justify-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-800 sm:justify-end">
+                      <Sparkles className="w-4 h-4" />
+                      {diagnosisReviewStatus === 'candidate' ? '已进入经验候选区' : '已形成复盘'}
+                    </span>
+                  ) : null}
                   <Button
                     type="button"
-                    className="shrink-0 gap-2 bg-violet-700 hover:bg-violet-800"
+                    className="gap-2 bg-violet-700 hover:bg-violet-800"
                     onClick={() =>
                       openDeposition({
                         ...diagnosisReviewPrefill,
@@ -1044,14 +1120,9 @@ export function ProductDiagnosisDetail() {
                     }
                   >
                     <Sparkles className="w-4 h-4" />
-                    形成复盘
+                    形成经验
                   </Button>
-                ) : (
-                  <span className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-800">
-                    <Sparkles className="w-4 h-4" />
-                    {diagnosisReviewStatus === 'candidate' ? '已进入经验候选区' : '已形成复盘'}
-                  </span>
-                )}
+                </div>
               </div>
             </div>
           ) : null}
@@ -1100,7 +1171,7 @@ export function ProductDiagnosisDetail() {
                   {pendingActionCount} 个动作等待拍板
                 </div>
                 <div className="text-xs text-orange-700 mb-3">
-                  先确认是否放行，再决定是否立即去推进
+                  先确认是否放行，再决定如何继续往下推
                 </div>
                 <div className="flex flex-col gap-2">
                   {productActionRows.find((row) => row.task.status === 'pending_decision') ? (
@@ -1116,11 +1187,11 @@ export function ProductDiagnosisDetail() {
                       }}
                     >
                       <PlayCircle className="w-4 h-4" />
-                      打开推进中心
+                      继续推进
                     </Button>
                   ) : null}
                   <Button variant="outline" className="w-full justify-center text-sm" asChild>
-                    <Link to="/approvals">去拍板中心</Link>
+                    <Link to={journeyLinks.approvals}>去动作拍板</Link>
                   </Button>
                 </div>
               </div>
@@ -1202,11 +1273,11 @@ export function ProductDiagnosisDetail() {
         {/* Main CTA */}
         <div className="p-6 bg-gradient-to-b from-blue-50 to-white">
           <Link
-            to="/approvals"
+            to={journeyLinks.approvals}
             className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium mb-3"
           >
             <CheckCircle2 className="w-5 h-5" />
-            发起执行审批
+            去动作拍板
           </Link>
 
           <button
@@ -1214,7 +1285,7 @@ export function ProductDiagnosisDetail() {
             className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
           >
             <Info className="w-5 h-5" />
-            查看完整解释
+            看判断依据
           </button>
         </div>
       </div>
@@ -1233,7 +1304,14 @@ export function ProductDiagnosisDetail() {
         task={selectedTask?.task ?? null}
         actionId={selectedTask?.actionId}
         productId={selectedTask?.productId}
-        detailHref={productId ? `/products/${productId}?focus=actions` : undefined}
+        detailHref={
+          productId
+            ? buildJourneyLinks({
+                actionId: selectedTask?.actionId,
+                productId,
+              }).diagnosis
+            : undefined
+        }
         source="diagnosis"
       />
 
@@ -1241,7 +1319,7 @@ export function ProductDiagnosisDetail() {
         open={strategySupportOpen}
         onClose={() => setStrategySupportOpen(false)}
         snippets={resolvedKnowledge.strategySnippets}
-        contextHint={`goods_id ${product.id} · 根因/策略/问题语境已参与匹配`}
+        contextHint={`商品 ${product.name} · 根因/策略/问题语境已参与匹配`}
       />
 
       {/* Explain Drawer */}

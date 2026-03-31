@@ -24,7 +24,7 @@ export function ReviewLearningStrip() {
                 ? `；已进入经验候选区，当前累计 ${summary.candidateCount} 条可供后续类似问题参考。`
                 : '；这条复盘会保留在结果跟踪里，便于后续快速回看。'}
               <Link to="/replay#review-learning-path" className="text-violet-700 hover:underline ml-1">
-                查看沉淀路径
+                去看结果复盘
               </Link>
             </p>
           </div>

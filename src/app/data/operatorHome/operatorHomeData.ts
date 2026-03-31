@@ -159,7 +159,7 @@ export function getOperatorHomeShell(): Pick<
   return {
     userName: '李明',
     heroTagline:
-      '先盯今日重点与关键风险，再按推荐打法去推进；落地后到执行里看进度，回放里看结果，最后形成经验。',
+      '先看今日重点，再把最该处理的一件事往前推；遇到卡点就恢复或接手，处理完成后顺手形成经验。',
     taskPromptExamples: [
       '今天最该先处理哪几个链接',
       '最近有哪些高风险要优先止损',
@@ -396,12 +396,12 @@ export function getInProgressTasks(getOverride?: TaskOverrideGetter): InProgress
   const pmap = productMap();
   const acc: InProgressTaskVM[] = [];
   const rank: Record<OperatorTask['status'], number> = {
-    failed: 0,
-    needs_takeover: 1,
-    blocked: 2,
-    waiting_input: 3,
-    diagnosing: 4,
-    pending_decision: 5,
+    waiting_input: 0,
+    diagnosing: 1,
+    pending_decision: 2,
+    failed: 3,
+    needs_takeover: 4,
+    blocked: 5,
     approved: 6,
     executing: 7,
     completed: 8,
@@ -409,7 +409,7 @@ export function getInProgressTasks(getOverride?: TaskOverrideGetter): InProgress
     archived: 10,
   };
 
-  const rows = listOperatorTaskRows(getOverride)
+  const filtered = listOperatorTaskRows(getOverride)
     .filter(({ task }) =>
       [
         'pending_decision',
@@ -428,8 +428,14 @@ export function getInProgressTasks(getOverride?: TaskOverrideGetter): InProgress
         return rank[a.task.status] - rank[b.task.status];
       }
       return a.task.updatedAt < b.task.updatedAt ? 1 : a.task.updatedAt > b.task.updatedAt ? -1 : 0;
-    })
-    .slice(0, 6);
+    });
+
+  const top = filtered.slice(0, 6);
+  const topIds = new Set(top.map((r) => r.action.id));
+  const completedExtra = filtered
+    .filter(({ task, action }) => task.status === 'completed' && !topIds.has(action.id))
+    .slice(0, 3);
+  const rows = [...top, ...completedExtra];
 
   rows.forEach(({ action, task }) => pushInProgress(acc, action, task, pmap));
   return acc;

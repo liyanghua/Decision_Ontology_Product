@@ -33,6 +33,17 @@ export function InProgressTaskList({
 }: InProgressTaskListProps) {
   const { openDeposition, getReviewStatus } = useReviewLedger();
 
+  const detailButtonLabel = (task: InProgressTaskVM['task']) => {
+    if (task.status === 'waiting_input') return '补齐信息';
+    if (task.status === 'diagnosing') return '收口诊断';
+    if (task.status === 'pending_decision') return '去拍板';
+    if (task.status === 'approved') return '去推进';
+    if (task.status === 'failed') return '重新执行';
+    if (task.status === 'needs_takeover') return '人工处理';
+    if (task.status === 'executing') return '看推进结果';
+    return '继续推进';
+  };
+
   return (
     <Card className="border-slate-200 shadow-sm h-full">
       <CardHeader className="pb-3">
@@ -40,7 +51,7 @@ export function InProgressTaskList({
           <ListTodo className="w-4 h-4 text-blue-600" />
           最近推进任务
         </CardTitle>
-        <CardDescription>进行中的动作与状态；可直接打开详情抽屉继续推进、恢复或人工处理。</CardDescription>
+        <CardDescription>把正在推进、卡住待恢复、以及前置待收口的任务放在一处，顺着主线继续往前推。</CardDescription>
       </CardHeader>
       <CardContent>
         {status === 'loading' ? (
@@ -97,7 +108,7 @@ export function InProgressTaskList({
                         }}
                       >
                         <Sparkles className="w-3.5 h-3.5" />
-                        形成复盘
+                        形成经验
                       </Button>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-800">
@@ -116,7 +127,7 @@ export function InProgressTaskList({
                       className="text-xs h-8"
                       onClick={() => onOpenTask(it)}
                     >
-                      查看处理详情
+                      {detailButtonLabel(it.task)}
                     </Button>
                   </div>
                 ) : null}

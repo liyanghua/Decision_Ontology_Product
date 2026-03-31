@@ -14,7 +14,7 @@ type ReviewDigestPanelProps = {
 function reviewStatusLabel(status: ReviewStatus) {
   if (status === 'candidate') return '已进入经验候选区';
   if (status === 'reviewed') return '已形成复盘';
-  return '待形成复盘';
+  return '待形成经验';
 }
 
 export function ReviewDigestPanel({ recentCompletedTasks }: ReviewDigestPanelProps) {
@@ -32,11 +32,11 @@ export function ReviewDigestPanel({ recentCompletedTasks }: ReviewDigestPanelPro
         <div>
           <div className="flex items-center gap-2 text-violet-700">
             <BookMarked className="h-4 w-4" />
-            <span className="text-sm font-medium">结果与沉淀</span>
+            <span className="text-sm font-medium">这次处理有没有被记住</span>
           </div>
-          <h2 className="mt-1 text-xl font-semibold text-slate-900">系统正在记住这次处理</h2>
+          <h2 className="mt-1 text-xl font-semibold text-slate-900">系统正在把这轮处理沉淀下来</h2>
           <p className="mt-1 text-sm text-slate-600">
-            最近新增复盘、刚完成的任务，以及进入经验候选区的经验都会在这里汇总。
+            最近新增复盘、刚完成的任务，以及进入经验候选区的经验都会在这里汇总，方便下次少走弯路。
           </p>
         </div>
         <Button variant="outline" size="sm" asChild>
@@ -90,7 +90,7 @@ export function ReviewDigestPanel({ recentCompletedTasks }: ReviewDigestPanelPro
                     <p className="mt-3 text-sm leading-6 text-slate-600">{latestReview.lesson}</p>
                   ) : (
                     <p className="mt-3 text-sm leading-6 text-slate-600">
-                      这轮已经处理完成，可以顺手形成复盘，让系统记住这次做法。
+                      这轮已经处理完成，可以顺手形成经验，让系统记住这次做法。
                     </p>
                   )}
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -101,14 +101,25 @@ export function ReviewDigestPanel({ recentCompletedTasks }: ReviewDigestPanelPro
                         className="h-8 text-xs"
                         onClick={() => openDeposition(buildReviewPrefillFromTask(task.task))}
                       >
-                        形成复盘
+                        形成经验
                       </Button>
                     ) : (
-                      <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+                      <>
+                        <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
                           <Link to="/replay#review-learning-path">
-                          {status === 'candidate' ? '查看候选经验' : '查看复盘路径'}
+                            {status === 'candidate' ? '查看候选经验' : '查看复盘路径'}
                           </Link>
-                      </Button>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => openDeposition(buildReviewPrefillFromTask(task.task))}
+                        >
+                          形成经验
+                        </Button>
+                      </>
                     )}
                     <Button variant="ghost" size="sm" className="h-8 text-xs" asChild>
                       <Link to={task.href}>回到任务</Link>

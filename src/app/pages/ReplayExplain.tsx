@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import {
   BookOpen,
   FileJson,
@@ -13,6 +13,7 @@ import {
   getDecisionObject,
   getAvailableStatDates,
 } from '../data/liveCatalog';
+import { buildJourneyLinks } from '../data/operatorJourney';
 import {
   DETAIL_METRIC_KEYS,
   DETAIL_METRIC_LABEL_ZH,
@@ -28,6 +29,13 @@ import { SopFlowCompactBar } from '../components/knowledge/SopFlowCompactBar';
 import { FlowSupportDrawer } from '../components/knowledge/FlowSupportDrawer';
 import { StrategySupportDrawer } from '../components/knowledge/StrategySupportDrawer';
 import { StrategySupportTrigger } from '../components/knowledge/StrategySupportTrigger';
+import { OperatorJourneyBar } from '../components/operatorJourney/OperatorJourneyBar';
+import { TaskActionPanel } from '../components/taskFlow/TaskActionPanel';
+import { useOperatorJourney } from '../contexts/OperatorJourneyContext';
+import { useReviewLedger } from '../contexts/ReviewLedgerContext';
+import { useTaskFlowOverrides } from '../contexts/TaskFlowOverrideContext';
+import { listOperatorTaskRows } from '../data/taskFlow';
+import { Button } from '../components/ui/button';
 
 const DIAG_GRADE_LABEL = '诊断等级（原始）';
 
@@ -41,6 +49,12 @@ function formatJsonPretty(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+function sourceLabel(source?: string): string {
+  if (!source?.trim()) return '本地留档快照';
+  if (source === 'ads_fact_csv_replay') return '本地留档快照';
+  return source;
 }
 
 function DiagnosisBlockCards({
@@ -87,7 +101,19 @@ function blockItemsStructured(field: string | undefined, mode: 'bullets' | 'high
 
 export function ReplayExplain() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { activeActionId, setActiveAction, visitStep } = useOperatorJourney();
+  const { getOverride } = useTaskFlowOverrides();
+  const { getReviewStatus } = useReviewLedger();
   const products = useMemo(() => listProducts(), []);
+  const actionIdFromQuery = searchParams.get('actionId')?.trim() || activeActionId || '';
+  const taskRows = useMemo(() => listOperatorTaskRows(getOverride), [getOverride]);
+  const focusedRow = useMemo(
+    () =>
+      actionIdFromQuery
+        ? taskRows.find((row) => row.action.id === actionIdFromQuery) ?? null
+        : null,
+    [actionIdFromQuery, taskRows],
+  );
 
   const [goodsId, setGoodsId] = useState(() => {
     const fromUrl = searchParams.get('goodsId');
@@ -135,8 +161,9 @@ export function ReplayExplain() {
   );
 
   const syncUrl = useCallback(
-    (g: string, d: string, c: string) => {
+    (g: string, d: string, c: string, actionId: string) => {
       const p = new URLSearchParams();
+      if (actionId) p.set('actionId', actionId);
       if (g) p.set('goodsId', g);
       if (d) p.set('date', d);
       if (c) p.set('compare', c);
@@ -146,8 +173,15 @@ export function ReplayExplain() {
   );
 
   useEffect(() => {
-    syncUrl(goodsId, statistDate, compareDate);
-  }, [goodsId, statistDate, compareDate, syncUrl]);
+    syncUrl(goodsId, statistDate, compareDate, focusedRow?.action.id || actionIdFromQuery);
+  }, [actionIdFromQuery, compareDate, focusedRow?.action.id, goodsId, statistDate, syncUrl]);
+
+  useEffect(() => {
+    if (!focusedRow?.action.productId) return;
+    if (focusedRow.action.productId === goodsId) return;
+    setGoodsId(focusedRow.action.productId);
+    setCompareDate('');
+  }, [focusedRow?.action.productId, goodsId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -163,6 +197,26 @@ export function ReplayExplain() {
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === goodsId) ?? null,
     [goodsId, products],
+  );
+  const focusedReviewStatus = useMemo(
+    () =>
+      focusedRow
+        ? getReviewStatus({
+            actionId: focusedRow.task.sourceRefs.actionId,
+            executionId: focusedRow.task.sourceRefs.executionId,
+            productId: focusedRow.task.sourceRefs.productId,
+            taskId: focusedRow.task.id,
+          })
+        : 'none',
+    [focusedRow, getReviewStatus],
+  );
+  const journeyLinks = useMemo(
+    () =>
+      buildJourneyLinks({
+        actionId: focusedRow?.action.id || actionIdFromQuery || undefined,
+        productId: focusedRow?.action.productId || goodsId || undefined,
+      }),
+    [actionIdFromQuery, focusedRow?.action.id, focusedRow?.action.productId, goodsId],
   );
 
   const coreItems = useMemo(
@@ -228,6 +282,19 @@ export function ReplayExplain() {
       }),
     [goodsId, problemItems, improveItems, replaySopPhase, compareDate],
   );
+
+  useEffect(() => {
+    if (!focusedRow) return;
+    setActiveAction({
+      actionId: focusedRow.action.id,
+      productId: focusedRow.action.productId || undefined,
+    });
+    visitStep({
+      actionId: focusedRow.action.id,
+      productId: focusedRow.action.productId || undefined,
+      step: 'replay',
+    });
+  }, [focusedRow, setActiveAction, visitStep]);
 
   if (!products.length) {
     return (
@@ -298,7 +365,7 @@ export function ReplayExplain() {
 
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm">
-            <span className="text-gray-600">商品ID</span>
+            <span className="text-gray-600">处理对象</span>
             <select
               value={goodsId}
               onChange={(e) => {
@@ -309,7 +376,7 @@ export function ReplayExplain() {
             >
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.id}
+                  {p.name} · {p.id}
                 </option>
               ))}
             </select>
@@ -349,14 +416,97 @@ export function ReplayExplain() {
         </div>
       </div>
 
+      {focusedRow ? (
+        <div className="mb-4 space-y-4">
+          <OperatorJourneyBar
+            task={focusedRow.task}
+            actionId={focusedRow.action.id}
+            productId={focusedRow.action.productId || undefined}
+            reviewStatus={focusedReviewStatus}
+          />
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="text-sm font-medium text-slate-900">这页回看的就是刚才那条任务</div>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {focusedRow.action.name} · {focusedRow.task.statusLabel}。先对照这轮处理前后怎么变，再把值得留下的经验顺手沉淀下来。
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link to={journeyLinks.execution}>回推进结果</Link>
+                </Button>
+                <Button asChild size="sm">
+                  <a href="#journey-review-cta">形成经验</a>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {!run && (
         <div className="rounded-lg border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">
-          当前组合无诊断记录，请更换商品ID或基准日。
+          当前组合无诊断记录，请更换处理对象或基准日。
         </div>
       )}
 
       {run && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-4">
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="text-xs font-medium text-slate-500">这轮处理前后怎么变了</div>
+              <p className="mt-2 text-sm leading-6 text-slate-700">
+                {coreItems[0] ?? '先看这轮盘面快照，再决定结论是否站得住。'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="text-xs font-medium text-slate-500">为什么当时这么判断</div>
+              <p className="mt-2 text-sm leading-6 text-slate-700">
+                {problemItems[0] ?? '把问题剖析、增长判断和关键证据放在一处回看。'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-4">
+              <div className="text-xs font-medium text-violet-700">哪条经验值得留下</div>
+              <p className="mt-2 text-sm leading-6 text-violet-900">
+                {improveItems[0] ?? '处理完成后，把这轮有效做法沉淀下来，方便下次更快判断。'}
+              </p>
+            </div>
+          </div>
+
+          {focusedRow ? (
+            <div
+              id="journey-review-cta"
+              className="mt-4 rounded-lg border border-violet-200 bg-white p-4"
+            >
+              {focusedRow.task.status === 'completed' ? (
+                <TaskActionPanel
+                  task={focusedRow.task}
+                  actionId={focusedRow.action.id}
+                  productId={focusedRow.action.productId || undefined}
+                  detailHref={journeyLinks.diagnosis}
+                  source="task_detail"
+                  showTimeline={false}
+                  title="形成经验"
+                />
+              ) : (
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-slate-900">这条任务还没真正闭环</div>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      先回推进结果把这条任务跑到“已处理完成”，再在这里形成经验，闭环才算走完整。
+                    </p>
+                  </div>
+                  <Button asChild>
+                    <Link to={journeyLinks.execution}>回推进结果</Link>
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-4">
           {/* Left — Snapshot */}
           <aside className="lg:col-span-4 space-y-4">
             <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -445,19 +595,19 @@ export function ReplayExplain() {
                 <LayoutList className="w-4 h-4" />
                 复盘摘要
               </button>
-              <button
-                type="button"
-                onClick={() => setMiddleTab('rawJson')}
+                <button
+                  type="button"
+                  onClick={() => setMiddleTab('rawJson')}
                 className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
                   middleTab === 'rawJson'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
-              >
-                <FileJson className="w-4 h-4" />
-                原始内容明细
-              </button>
-            </div>
+                >
+                  <FileJson className="w-4 h-4" />
+                  原始留档明细
+                </button>
+              </div>
 
             {middleTab === 'rawJson' && (
               <div className="rounded-lg border border-gray-200 bg-gray-950 overflow-hidden">
@@ -559,23 +709,23 @@ export function ReplayExplain() {
             <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 bg-violet-50 flex items-center gap-2">
                 <Info className="w-4 h-4 text-violet-700" />
-                <h2 className="text-sm font-semibold text-gray-900">本次记录信息</h2>
+                <h2 className="text-sm font-semibold text-gray-900">这条记录来自哪里</h2>
               </div>
               <dl className="p-4 text-xs space-y-2 font-mono">
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500 shrink-0">记录版本</dt>
+                  <dt className="text-gray-500 shrink-0">留档版本</dt>
                   <dd>{baseObject?.schemaVersion}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500 shrink-0">记录编号</dt>
+                  <dt className="text-gray-500 shrink-0">留档编号</dt>
                   <dd className="text-right break-all">{run.id}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500 shrink-0">数据来源</dt>
-                  <dd>{run.source}</dd>
+                  <dt className="text-gray-500 shrink-0">留档来源</dt>
+                  <dd>{sourceLabel(run.source)}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500 shrink-0">记录时间</dt>
+                  <dt className="text-gray-500 shrink-0">留档时间</dt>
                   <dd className="text-right">{run.recordedAt}</dd>
                 </div>
               </dl>
@@ -620,6 +770,7 @@ export function ReplayExplain() {
             </div>
           </aside>
         </div>
+        </>
       )}
 
       <FlowSupportDrawer

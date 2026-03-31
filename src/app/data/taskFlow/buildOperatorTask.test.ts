@@ -86,6 +86,10 @@ describe('buildOperatorTask', () => {
     expect(task.status).toBe('pending_decision');
     expect(task.statusLabel).toBeTruthy();
     expect(task.availableActions.length).toBeGreaterThan(0);
+    expect(task.primaryAction).toBe('submit_approval');
+    expect(task.secondaryActions).toEqual(['defer', 'reject']);
+    expect(task.nextRouteHint?.label).toBe('去拍板');
+    expect(task.nextRouteHint?.href).toContain('actionId=A-TDD-001');
   });
 
   it('keeps waiting_input tasks in the pre-stage queue with a direct input-complete action', () => {
@@ -95,6 +99,7 @@ describe('buildOperatorTask', () => {
 
     expect(task.status).toBe('waiting_input');
     expect(task.availableActions).toContain('fill_inputs');
+    expect(task.primaryAction).toBe('fill_inputs');
   });
 
   it('keeps diagnosing tasks in the pre-stage queue with a direct diagnosis-complete action', () => {
@@ -104,6 +109,7 @@ describe('buildOperatorTask', () => {
 
     expect(task.status).toBe('diagnosing');
     expect(task.availableActions).toContain('finish_diagnosis');
+    expect(task.primaryAction).toBe('finish_diagnosis');
   });
 
   it('uses approval decisions to move tasks to approved and records approver on the timeline', () => {
@@ -169,6 +175,8 @@ describe('buildOperatorTask', () => {
     );
     expect(task.status).toBe('executing');
     expect(task.updatedAt).toBe('2026-03-28 10:00:00');
+    expect(task.nextRouteHint?.label).toBe('看推进结果');
+    expect(task.nextRouteHint?.href).toContain('actionId=A-TDD-001');
   });
 
   it('maps failed execution to failed task and surfaces the error reason', () => {
@@ -231,6 +239,9 @@ describe('buildOperatorTask', () => {
 
     expect(task.status).toBe('completed');
     expect(task.latestRecoveryStateLabel).toBe('已恢复成功');
+    expect(task.primaryAction).toBe('create_review');
+    expect(task.nextRouteHint?.label).toBe('看结果复盘');
+    expect(task.nextRouteHint?.href).toContain('actionId=A-TDD-001');
     expect(
       task.timeline.some(
         (item) => item.kind === 'recovery_result' && item.outcomeLabel === '已恢复成功',

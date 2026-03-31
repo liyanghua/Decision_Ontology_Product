@@ -9,6 +9,7 @@ export type {
   TaskAction,
   TaskBadgeTone,
   TaskFlowDemoOverride,
+  TaskRouteHint,
   TaskSourceRefs,
   TaskStatus,
   TaskTimelineItem,

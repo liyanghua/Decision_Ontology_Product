@@ -8,6 +8,7 @@ import {
   type TaskAction,
   type TaskActionSource,
 } from '../../data/taskFlow';
+import { useOperatorJourney } from '../../contexts/OperatorJourneyContext';
 import { useTaskFlowOverrides } from '../../contexts/TaskFlowOverrideContext';
 import { useReviewLedger } from '../../contexts/ReviewLedgerContext';
 import { Button } from '../ui/button';
@@ -77,6 +78,7 @@ export function TaskActionPanel({
 }: TaskActionPanelProps) {
   const [note, setNote] = useState('');
   const { openDeposition, getReviewStatus, getLatestReview } = useReviewLedger();
+  const { setActiveAction, recordDecision } = useOperatorJourney();
   const {
     fillTaskInputs,
     finishTaskDiagnosis,
@@ -108,8 +110,13 @@ export function TaskActionPanel({
     productId: task.sourceRefs.productId,
     taskId: task.id,
   });
+  const showRouteAsPrimary =
+    task.status === 'pending_decision' &&
+    source !== 'approval_center' &&
+    task.nextRouteHint != null;
 
   const runAction = (action: TaskAction) => {
+    setActiveAction({ actionId, productId });
     const payload = {
       actionId,
       note,
@@ -119,9 +126,18 @@ export function TaskActionPanel({
 
     if (action === 'fill_inputs') fillTaskInputs(payload);
     if (action === 'finish_diagnosis') finishTaskDiagnosis(payload);
-    if (action === 'submit_approval') approveTask(payload);
-    if (action === 'reject') rejectTask(payload);
-    if (action === 'defer') deferTask(payload);
+    if (action === 'submit_approval') {
+      approveTask(payload);
+      recordDecision({ actionId, productId, outcome: 'approved' });
+    }
+    if (action === 'reject') {
+      rejectTask(payload);
+      recordDecision({ actionId, productId, outcome: 'rejected' });
+    }
+    if (action === 'defer') {
+      deferTask(payload);
+      recordDecision({ actionId, productId, outcome: 'deferred' });
+    }
     if (action === 'go_execute') {
       if (task.status === 'needs_takeover') resolveTakeoverToExecuting(payload);
       else startExecution(payload);
@@ -132,6 +148,7 @@ export function TaskActionPanel({
       if (task.status === 'needs_takeover') resolveTakeoverToCompleted(payload);
       else markTaskCompleted(payload);
     }
+    if (action === 'create_review') openDeposition(buildReviewPrefillFromTask(task));
     if (action === 'archive') {
       if (task.status === 'needs_takeover') resolveTakeoverToArchived(payload);
       else archiveTask(payload);
@@ -145,7 +162,7 @@ export function TaskActionPanel({
         <div className="border-b border-slate-100 px-4 py-3">
           <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            不用填复杂流程单，直接在这里拍板、继续推进，或者转人工处理。
+            不用切换成复杂流程页，直接在这里拍板、继续推进，或者把卡住的任务接过来处理。
           </p>
         </div>
 
@@ -170,7 +187,7 @@ export function TaskActionPanel({
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
             <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
               <AlertCircle className="h-3.5 w-3.5" />
-              当前建议
+              现在先做什么
             </div>
             <p className="mt-1 text-sm leading-6 text-slate-700">{task.nextStepHint}</p>
           </div>
@@ -188,42 +205,76 @@ export function TaskActionPanel({
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {task.availableActions.map((action) => {
-              if (action === 'view_diagnosis' && resolvedDetailHref) {
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {showRouteAsPrimary && task.nextRouteHint ? (
+                <Button size="sm" className="h-8 text-xs" asChild>
+                  <Link to={task.nextRouteHint.href}>{task.nextRouteHint.label}</Link>
+                </Button>
+              ) : null}
+
+              {!showRouteAsPrimary && task.primaryAction && task.primaryAction !== 'create_review' ? (
+                task.primaryAction === 'view_diagnosis' && resolvedDetailHref ? (
+                  <Button size="sm" className="h-8 text-xs" asChild>
+                    <Link to={resolvedDetailHref}>{getTaskActionLabel(task.primaryAction, task.status)}</Link>
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className={cn(
+                      'h-8 text-xs',
+                      task.primaryAction === 'mark_completed' && 'bg-emerald-600 hover:bg-emerald-700',
+                    )}
+                    onClick={() => runAction(task.primaryAction!)}
+                  >
+                    {task.primaryAction === 'mark_completed' ? (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    ) : null}
+                    {getTaskActionLabel(task.primaryAction, task.status)}
+                  </Button>
+                )
+              ) : null}
+
+              {task.secondaryActions.map((action) => {
+                if (action === 'view_diagnosis' && resolvedDetailHref) {
+                  return (
+                    <Button key={action} variant="outline" size="sm" className="h-8 text-xs" asChild>
+                      <Link to={resolvedDetailHref}>{getTaskActionLabel(action, task.status)}</Link>
+                    </Button>
+                  );
+                }
+
                 return (
-                  <Button key={action} variant="outline" size="sm" className="h-8 text-xs" asChild>
-                    <Link to={resolvedDetailHref}>{getTaskActionLabel(action, task.status)}</Link>
+                  <Button
+                    key={action}
+                    type="button"
+                    variant={action === 'reject' ? 'destructive' : 'outline'}
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => runAction(action)}
+                  >
+                    {getTaskActionLabel(action, task.status)}
                   </Button>
                 );
-              }
+              })}
+            </div>
 
-              const variant =
-                action === 'reject'
-                  ? 'destructive'
-                  : action === 'defer' || action === 'takeover' || action === 'archive'
-                    ? 'outline'
-                    : 'default';
-
-              return (
-                <Button
-                  key={action}
-                  type="button"
-                  variant={variant}
-                  size="sm"
-                  className={cn(
-                    'h-8 text-xs',
-                    action === 'mark_completed' && 'bg-emerald-600 hover:bg-emerald-700',
-                  )}
-                  onClick={() => runAction(action)}
-                >
-                  {action === 'mark_completed' ? (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  ) : null}
-                  {getTaskActionLabel(action, task.status)}
-                </Button>
-              );
-            })}
+            {task.nextRouteHint && (!showRouteAsPrimary || source === 'approval_center') ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-3">
+                <div className="text-xs font-medium text-slate-600">下一站</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <p className="text-sm text-slate-700">
+                    {task.status === 'completed'
+                      ? '这轮已经处理完成，建议顺手去看结果并把经验留下。'
+                      : '做完这一步后，顺着主线继续往下走，不要让任务停在这里。'}
+                  </p>
+                  <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+                    <Link to={task.nextRouteHint.href}>{task.nextRouteHint.label}</Link>
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {task.status === 'completed' ? (
@@ -234,24 +285,23 @@ export function TaskActionPanel({
                   <p className="mt-1 text-sm leading-6 text-violet-950">
                     {latestReview
                       ? latestReview.lesson
-                      : '这轮已经处理完成，顺手形成复盘，后续类似问题就能更快参考这次做法。'}
+                      : '这轮已经处理完成，顺手形成经验，后续类似问题就能更快参考这次做法。'}
                   </p>
                 </div>
-                <div className="shrink-0">
-                  {taskReviewStatus === 'none' ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8 text-xs bg-violet-700 hover:bg-violet-800"
-                      onClick={() => openDeposition(buildReviewPrefillFromTask(task))}
-                    >
-                      形成复盘
-                    </Button>
-                  ) : (
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  {taskReviewStatus !== 'none' ? (
                     <span className="rounded-full border border-violet-200 bg-white px-2 py-1 text-[11px] font-medium text-violet-700">
                       {taskReviewStatus === 'candidate' ? '已进入经验候选区' : '已形成复盘'}
                     </span>
-                  )}
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 text-xs bg-violet-700 hover:bg-violet-800"
+                    onClick={() => openDeposition(buildReviewPrefillFromTask(task))}
+                  >
+                    形成经验
+                  </Button>
                 </div>
               </div>
             </div>

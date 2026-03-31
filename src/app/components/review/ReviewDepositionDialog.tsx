@@ -63,7 +63,7 @@ export function ReviewDepositionDialog({ open, prefill, onClose, onCommit }: Pro
                 <DialogTitle>沉淀本次复盘</DialogTitle>
               </div>
               <DialogDescription>
-                用一两句话记下「做了什么、结果如何、下次怎么用」。系统会存档；若勾选参考经验，将参与后续同类决策的推荐。
+                用一两句话记下「做了什么、结果如何、下次怎么用」。系统会把这次处理留档；若勾选参考经验，会先进入经验候选区，供后续类似问题参考。
               </DialogDescription>
             </DialogHeader>
 
@@ -114,7 +114,7 @@ export function ReviewDepositionDialog({ open, prefill, onClose, onCommit }: Pro
                     建议作为后续决策的参考经验
                   </Label>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    勾选后，将进入经验候选区并由系统先做一轮轻量核对；不勾选则仅保存你的复盘记录，仍可在结果复盘里查看路径示意。
+                    勾选后，将进入经验候选区并由系统先做一轮轻量核对；不勾选则仅保留这条复盘记录，仍可在结果复盘里随时回看。
                   </p>
                 </div>
               </div>

@@ -6,9 +6,10 @@ describe('operatorHomeData task adapters', () => {
     const items = getInProgressTasks();
     expect(items.length).toBeGreaterThan(0);
     expect(items.every((item) => item.task != null)).toBe(true);
-    expect(items.some((item) => item.actionId === 'A007')).toBe(true);
     expect(
       items.some((item) =>
+        item.task.status === 'waiting_input' ||
+        item.task.status === 'diagnosing' ||
         item.task.status === 'pending_decision' ||
         item.task.status === 'approved' ||
         item.task.status === 'executing' ||
@@ -23,6 +24,7 @@ describe('operatorHomeData task adapters', () => {
     const items = getInProgressTasks();
     expect(items.some((item) => item.task.status === 'waiting_input')).toBe(true);
     expect(items.some((item) => item.task.status === 'diagnosing')).toBe(true);
+    expect(items[0]?.task.status).toBe('waiting_input');
   });
 
   it('returns suggested actions that are all pending decision tasks', () => {
